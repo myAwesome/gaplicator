@@ -75,6 +75,9 @@ func main() {
 			if f.Unique {
 				fmt.Print(" [unique]")
 			}
+			if f.Default != nil {
+				fmt.Printf(" [default: %v]", f.Default)
+			}
 			if f.References != "" {
 				fmt.Printf(" -> %s", f.References)
 			}
