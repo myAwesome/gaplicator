@@ -11,55 +11,61 @@ Generate a full-stack web application (database + server + client) from a single
 | Client   | React             |
 | Auth     | JWT               |
 
-## Concept
+## Usage
 
-Describe your app in YAML — `vibe-gen` scaffolds the entire stack and keeps it in sync as your config evolves.
+```bash
+gapp build <config.yaml> [-o <output-dir>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-o`, `--output` | `dist` | Output directory for generated files |
+
+## Config format
 
 ```yaml
 app:
-  name: todo-app
-  database:
-    models:
-      - name: Task
-        fields:
-          - name: title
-            type: string
-            required: true
-          - name: done
-            type: boolean
-            default: false
-  server:
-    auth: jwt
-  client:
-    pages:
-      - name: Home
-        route: /
-        components: [TaskList, AddTask]
+  name: my-app   # used as Go module name
+  port: 8080
+
+database:
+  host: localhost
+  name: my_db
+
+models:
+  - name: posts        # plural snake_case → table name
+    fields:
+      - name: title
+        type: varchar(200)
+        required: true
+      - name: published
+        type: boolean
+        default: false
+      - name: author_id
+        type: int
+        references: users.id   # FK → users table
 ```
 
-Running `vibe-gen build app.yaml` produces:
+Supported field types: `int`, `bigint`, `smallint`, `text`, `boolean`, `bool`, `date`, `datetime`, `timestamp`, `uuid`, `float`, `double`, `varchar(N)`, `char(N)`, `decimal(P,S)`
+
+## What gets generated
+
+Running `gapp build app.yaml` produces:
 
 ```
-generated/
-├── db/
-│   └── migrations/
-├── server/
-│   ├── handlers/
-│   ├── models/
-│   ├── middleware/
-│   └── main.go
-└── client/
-    └── src/
-        ├── pages/
-        └── components/
+dist/
+├── main.go                        # Gin server + GORM auto-migrate
+├── go.mod                         # module with gin/gorm/postgres deps
+├── docker-compose.yml             # app + postgres services
+├── schema.sql                     # CREATE TABLE statements
+├── migrations/
+│   ├── 001_initial.up.sql
+│   └── 001_initial.down.sql
+├── models/
+│   └── models.go                  # GORM structs
+└── routes/
+    └── routes.go                  # Gin CRUD handlers
 ```
-
-## Features
-
-- **Database** — PostgreSQL migrations and GORM models
-- **Server** — Gin REST API routes, JWT auth middleware
-- **Client** — React pages, components, API bindings
-- **Sync** — re-run `build` after config changes; only diffs are regenerated
 
 ## Getting Started
 
@@ -68,15 +74,15 @@ generated/
 go install github.com/myAwesome/vibe-gen@latest
 
 # scaffold from config
-vibe-gen build app.yaml
+gapp build app.yaml
 
 # start generated app
-cd generated && docker-compose up
+cd dist && docker-compose up
 ```
 
-## Config Reference
+## Config reference
 
-Full schema documentation: [docs/config.md](docs/config.md)
+See [`sandbox/example.yaml`](sandbox/example.yaml) for a full working example.
 
 ## License
 
