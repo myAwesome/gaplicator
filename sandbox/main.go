@@ -219,6 +219,160 @@ func topoSort(models []Model) []Model {
 	return result
 }
 
+// toSingular converts a plural snake_case table name to singular.
+func toSingular(s string) string {
+	if strings.HasSuffix(s, "ies") {
+		return s[:len(s)-3] + "y"
+	}
+	if strings.HasSuffix(s, "sses") || strings.HasSuffix(s, "xes") || strings.HasSuffix(s, "ches") || strings.HasSuffix(s, "shes") {
+		return s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "ss") {
+		return s[:len(s)-1]
+	}
+	return s
+}
+
+// goAcronyms lists lowercase words that should be fully uppercased in Go identifiers.
+var goAcronyms = map[string]string{
+	"id": "ID", "url": "URL", "uri": "URI", "api": "API",
+	"http": "HTTP", "https": "HTTPS", "sql": "SQL", "db": "DB",
+	"uuid": "UUID", "ip": "IP",
+}
+
+// toPascalCase converts snake_case to PascalCase, honoring Go acronym conventions.
+func toPascalCase(s string) string {
+	parts := strings.Split(s, "_")
+	var sb strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if upper, ok := goAcronyms[strings.ToLower(p)]; ok {
+			sb.WriteString(upper)
+		} else {
+			sb.WriteString(strings.ToUpper(p[:1]) + p[1:])
+		}
+	}
+	return sb.String()
+}
+
+// sqlTypeToGo maps a SQL type to the corresponding Go type.
+func sqlTypeToGo(sqlType string) string {
+	lower := strings.ToLower(sqlType)
+	switch {
+	case strings.HasPrefix(lower, "varchar"), strings.HasPrefix(lower, "char"), lower == "text", lower == "uuid":
+		return "string"
+	case lower == "int", lower == "smallint":
+		return "int"
+	case lower == "bigint":
+		return "int64"
+	case lower == "boolean", lower == "bool":
+		return "bool"
+	case lower == "date", lower == "datetime", lower == "timestamp":
+		return "time.Time"
+	case lower == "float", lower == "double":
+		return "float64"
+	case strings.HasPrefix(lower, "decimal"):
+		return "float64"
+	default:
+		return "interface{}"
+	}
+}
+
+// extractSize returns the N from varchar(N) / char(N), or "" if not applicable.
+func extractSize(sqlType string) string {
+	lower := strings.ToLower(sqlType)
+	if strings.HasPrefix(lower, "varchar(") || strings.HasPrefix(lower, "char(") {
+		start := strings.Index(lower, "(")
+		end := strings.Index(lower, ")")
+		if start >= 0 && end > start {
+			return sqlType[start+1 : end]
+		}
+	}
+	return ""
+}
+
+// buildGORMTag builds the `gorm:"..."` tag value for a field.
+func buildGORMTag(f Field) string {
+	var parts []string
+	parts = append(parts, "column:"+f.Name)
+	if size := extractSize(f.Type); size != "" {
+		parts = append(parts, "size:"+size)
+	}
+	if f.Required {
+		parts = append(parts, "not null")
+	}
+	if f.Unique {
+		parts = append(parts, "uniqueIndex")
+	}
+	if f.Default != nil {
+		parts = append(parts, "default:"+formatDefault(f.Default))
+	}
+	return `gorm:"` + strings.Join(parts, ";") + `"`
+}
+
+// GenerateGORMModels returns Go source code with GORM model structs for all models.
+func GenerateGORMModels(models []Model, pkgName string) string {
+	// Check if time.Time is needed for any field.
+	needsTime := false
+	for _, m := range models {
+		for _, f := range m.Fields {
+			if sqlTypeToGo(f.Type) == "time.Time" {
+				needsTime = true
+			}
+		}
+	}
+
+	// Build struct name lookup: table name → struct name.
+	structNames := make(map[string]string, len(models))
+	for _, m := range models {
+		structNames[m.Name] = toPascalCase(toSingular(m.Name))
+	}
+
+	var sb strings.Builder
+	sb.WriteString("package " + pkgName + "\n\n")
+	sb.WriteString("import (\n")
+	if needsTime {
+		sb.WriteString("\t\"time\"\n\n")
+	}
+	sb.WriteString("\t\"gorm.io/gorm\"\n")
+	sb.WriteString(")\n")
+
+	for _, m := range models {
+		structName := structNames[m.Name]
+		sb.WriteString("\ntype " + structName + " struct {\n")
+		sb.WriteString("\tgorm.Model\n")
+
+		for _, f := range m.Fields {
+			fieldName := toPascalCase(f.Name)
+			goType := sqlTypeToGo(f.Type)
+			tag := buildGORMTag(f)
+			fmt.Fprintf(&sb, "\t%-20s %-12s `%s`\n", fieldName, goType, tag)
+
+			// For FK fields, add a typed association field.
+			if f.References != "" {
+				parts := strings.SplitN(f.References, ".", 2)
+				if assocStruct, ok := structNames[parts[0]]; ok {
+					// Strip "ID" or "Id" suffix to derive association field name.
+					assocField := strings.TrimSuffix(fieldName, "ID")
+					if assocField == fieldName {
+						assocField = strings.TrimSuffix(fieldName, "Id")
+					}
+					if assocField == fieldName {
+						assocField = assocStruct
+					}
+					fmt.Fprintf(&sb, "\t%-20s %-12s `gorm:\"foreignKey:%s\"`\n", assocField, assocStruct, fieldName)
+				}
+			}
+		}
+
+		sb.WriteString("}\n")
+	}
+
+	return sb.String()
+}
+
 func ParseConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -295,4 +449,13 @@ func main() {
 		log.Fatalf("write down migration: %v", err)
 	}
 	fmt.Println("Generated migrations/001_initial.down.sql")
+
+	if err := os.MkdirAll("models", 0755); err != nil {
+		log.Fatalf("create models dir: %v", err)
+	}
+	gormModels := GenerateGORMModels(cfg.Models, "models")
+	if err := os.WriteFile("models/models.go", []byte(gormModels), 0644); err != nil {
+		log.Fatalf("write models/models.go: %v", err)
+	}
+	fmt.Println("Generated models/models.go")
 }
