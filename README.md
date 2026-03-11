@@ -1,4 +1,4 @@
-# vibe-gen
+# Gaplicator
 
 Generate a full-stack web application (database + server + client) from a single YAML config file.
 
