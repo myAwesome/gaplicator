@@ -114,7 +114,7 @@ No local PostgreSQL client required — migrations run inside the container.
 
 ## Config reference
 
-See [`sandbox/example.yaml`](sandbox/example.yaml) for a full working example.
+See [`docs/config.md`](docs/config.md) for the full reference, or [`sandbox/example.yaml`](sandbox/example.yaml) for a working example.
 
 ## License
 
