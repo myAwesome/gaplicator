@@ -28,5 +28,8 @@ docker compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" < migrations/00
 echo "  migrations applied"
 
 # ── 3. Server ──────────────────────────────────────────────────────────────────
+echo "▸ Downloading dependencies..."
+go mod tidy
+
 echo "▸ Starting server on port {{.Port}}..."
 go run .
