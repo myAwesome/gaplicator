@@ -379,6 +379,62 @@ func TestGenerateEnv_Defaults(t *testing.T) {
 	}
 }
 
+func TestGenerateGORMModels_SnakeCaseJSONTags(t *testing.T) {
+	models := []Model{
+		{Name: "students", Fields: []Field{
+			{Name: "first_name", Type: "varchar(100)", Required: true},
+			{Name: "email", Type: "varchar(255)", Unique: true},
+		}},
+	}
+	out := GenerateGORMModels(models, "models")
+
+	for _, want := range []string{
+		`json:"first_name"`,
+		`json:"email"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing json tag %s in output:\n%s", want, out)
+		}
+	}
+}
+
+func TestGenerateGORMModels_BaseStructWithSnakeCaseTags(t *testing.T) {
+	models := []Model{
+		{Name: "items", Fields: []Field{{Name: "title", Type: "text"}}},
+	}
+	out := GenerateGORMModels(models, "models")
+
+	for _, want := range []string{
+		`json:"id"`,
+		`json:"created_at"`,
+		`json:"updated_at"`,
+		`json:"deleted_at,omitempty"`,
+		"type Base struct",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+
+	if strings.Contains(out, "gorm.Model") {
+		t.Error("output should not embed gorm.Model directly; expected custom Base struct")
+	}
+}
+
+func TestGenerateGORMModels_AssociationJSONTag(t *testing.T) {
+	models := []Model{
+		{Name: "subjects", Fields: []Field{{Name: "name", Type: "text"}}},
+		{Name: "lessons", Fields: []Field{
+			{Name: "subject_id", Type: "int", References: "subjects.id"},
+		}},
+	}
+	out := GenerateGORMModels(models, "models")
+
+	if !strings.Contains(out, `json:"subject"`) {
+		t.Errorf("expected json:\"subject\" for association field, got:\n%s", out)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
