@@ -311,7 +311,7 @@ func extractSize(sqlType string) string {
 }
 
 // buildGORMTag builds the `gorm:"..."` tag value for a field.
-func buildGORMTag(f Field) string {
+func buildFieldTags(f Field) string {
 	var parts []string
 	parts = append(parts, "column:"+f.Name)
 	if size := extractSize(f.Type); size != "" {
@@ -326,21 +326,11 @@ func buildGORMTag(f Field) string {
 	if f.Default != nil {
 		parts = append(parts, "default:"+formatDefault(f.Default))
 	}
-	return `gorm:"` + strings.Join(parts, ";") + `"`
+	return `gorm:"` + strings.Join(parts, ";") + `" json:"` + f.Name + `"`
 }
 
 // GenerateGORMModels returns Go source code with GORM model structs for all models.
 func GenerateGORMModels(models []Model, pkgName string) string {
-	// Check if time.Time is needed for any field.
-	needsTime := false
-	for _, m := range models {
-		for _, f := range m.Fields {
-			if sqlTypeToGo(f.Type) == "time.Time" {
-				needsTime = true
-			}
-		}
-	}
-
 	// Build struct name lookup: table name → struct name.
 	structNames := make(map[string]string, len(models))
 	for _, m := range models {
@@ -350,22 +340,27 @@ func GenerateGORMModels(models []Model, pkgName string) string {
 	var sb strings.Builder
 	sb.WriteString("package " + pkgName + "\n\n")
 	sb.WriteString("import (\n")
-	if needsTime {
-		sb.WriteString("\t\"time\"\n\n")
-	}
+	sb.WriteString("\t\"time\"\n\n")
 	sb.WriteString("\t\"gorm.io/gorm\"\n")
 	sb.WriteString(")\n")
+
+	sb.WriteString("\ntype Base struct {\n")
+	sb.WriteString("\tID        uint           `gorm:\"primarykey\" json:\"id\"`\n")
+	sb.WriteString("\tCreatedAt time.Time      `json:\"created_at\"`\n")
+	sb.WriteString("\tUpdatedAt time.Time      `json:\"updated_at\"`\n")
+	sb.WriteString("\tDeletedAt gorm.DeletedAt `gorm:\"index\" json:\"deleted_at,omitempty\"`\n")
+	sb.WriteString("}\n")
 
 	for _, m := range models {
 		structName := structNames[m.Name]
 		sb.WriteString("\ntype " + structName + " struct {\n")
-		sb.WriteString("\tgorm.Model\n")
+		sb.WriteString("\tBase\n")
 
 		for _, f := range m.Fields {
 			fieldName := toPascalCase(f.Name)
 			goType := sqlTypeToGo(f.Type)
-			tag := buildGORMTag(f)
-			fmt.Fprintf(&sb, "\t%-20s %-12s `%s`\n", fieldName, goType, tag)
+			tags := buildFieldTags(f)
+			fmt.Fprintf(&sb, "\t%-20s %-12s `%s`\n", fieldName, goType, tags)
 
 			// For FK fields, add a typed association field.
 			if f.References != "" {
@@ -379,7 +374,11 @@ func GenerateGORMModels(models []Model, pkgName string) string {
 					if assocField == fieldName {
 						assocField = assocStruct
 					}
-					fmt.Fprintf(&sb, "\t%-20s %-12s `gorm:\"foreignKey:%s\"`\n", assocField, assocStruct, fieldName)
+					assocJsonName := strings.TrimSuffix(f.Name, "_id")
+					if assocJsonName == f.Name {
+						assocJsonName = strings.TrimSuffix(f.Name, "_ID")
+					}
+					fmt.Fprintf(&sb, "\t%-20s %-12s `gorm:\"foreignKey:%s\" json:\"%s\"`\n", assocField, assocStruct, fieldName, assocJsonName)
 				}
 			}
 		}
