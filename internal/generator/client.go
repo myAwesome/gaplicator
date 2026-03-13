@@ -20,6 +20,25 @@ func isDateType(sqlType string) bool {
 	return strings.ToLower(sqlType) == "date"
 }
 
+// isDatetimeType returns true if the SQL type is datetime or timestamp (uses datetime-local input).
+func isDatetimeType(sqlType string) bool {
+	lower := strings.ToLower(sqlType)
+	return lower == "datetime" || lower == "timestamp"
+}
+
+// findLabelField returns the best display field name for a model (prefers "name"/"title", else first field).
+func findLabelField(m Model) string {
+	for _, f := range m.Fields {
+		if f.Name == "name" || f.Name == "title" {
+			return f.Name
+		}
+	}
+	if len(m.Fields) > 0 {
+		return m.Fields[0].Name
+	}
+	return "id"
+}
+
 // sqlTypeToTS maps a SQL type to the corresponding TypeScript type.
 func sqlTypeToTS(sqlType string) string {
 	lower := strings.ToLower(sqlType)
@@ -68,6 +87,8 @@ func tsInputType(sqlType string) string {
 		return "number"
 	case lower == "date":
 		return "date"
+	case lower == "datetime", lower == "timestamp":
+		return "datetime-local"
 	default:
 		return "text"
 	}
@@ -245,8 +266,10 @@ func GenerateReactAPI(m Model) string {
 	fmt.Fprintf(&sb, "import type { %s, Create%sInput } from '../types/%s';\n\n", structName, structName, singular)
 	fmt.Fprintf(&sb, "const BASE = '/%s';\n\n", m.Name)
 
-	fmt.Fprintf(&sb, "export async function list%s(): Promise<%s[]> {\n", pluralName, structName)
-	sb.WriteString("  const res = await fetch(BASE);\n")
+	fmt.Fprintf(&sb, "export interface Paginated%s { data: %s[]; total: number; page: number; limit: number; }\n\n", pluralName, structName)
+
+	fmt.Fprintf(&sb, "export async function list%s(page = 1, limit = 20): Promise<Paginated%s> {\n", pluralName, pluralName)
+	sb.WriteString("  const res = await fetch(`${BASE}?page=${page}&limit=${limit}`);\n")
 	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
 	sb.WriteString("  return res.json();\n")
 	sb.WriteString("}\n\n")
@@ -286,18 +309,81 @@ func GenerateReactAPI(m Model) string {
 }
 
 // GenerateReactPage returns src/pages/{Model}Page.tsx with a CRUD table and form for a model.
-func GenerateReactPage(m Model) string {
+// allModels is used to resolve FK references for dropdown rendering.
+func GenerateReactPage(m Model, allModels []Model) string {
 	singular := toSingular(m.Name)
 	structName := toPascalCase(singular)
 	pluralName := toPascalCase(m.Name)
 	componentName := structName + "Page"
+
+	// Collect FK field metadata (deduplicated by referenced model name).
+	type fkMeta struct {
+		field      Field
+		refModel   Model
+		labelField string
+		optionsVar string // e.g. "subjectOptions"
+		setterVar  string // e.g. "setSubjectOptions"
+		refStruct  string // e.g. "Subject"
+		refSingular string // e.g. "subject"
+		refPlural  string // e.g. "Subjects"
+	}
+	seenRef := map[string]bool{}
+	var fkFields []fkMeta
+	for _, f := range m.Fields {
+		if f.References == "" {
+			continue
+		}
+		parts := strings.SplitN(f.References, ".", 2)
+		refModelName := parts[0]
+		if seenRef[refModelName] {
+			continue
+		}
+		for _, rm := range allModels {
+			if rm.Name == refModelName {
+				seenRef[refModelName] = true
+				rs := toSingular(rm.Name)
+				rsn := toPascalCase(rs)
+				ov := strings.ToLower(rsn[:1]) + rsn[1:] + "Options"
+				sv := "set" + rsn + "Options"
+				fkFields = append(fkFields, fkMeta{
+					field:       f,
+					refModel:    rm,
+					labelField:  findLabelField(rm),
+					optionsVar:  ov,
+					setterVar:   sv,
+					refStruct:   rsn,
+					refSingular: rs,
+					refPlural:   toPascalCase(rm.Name),
+				})
+				break
+			}
+		}
+	}
+	// Also map field name → fkMeta for form rendering.
+	fkByField := map[string]fkMeta{}
+	for _, fk := range fkFields {
+		// All FK fields referencing the same model share the same options state.
+		for _, f := range m.Fields {
+			if f.References != "" {
+				p := strings.SplitN(f.References, ".", 2)
+				if p[0] == fk.refModel.Name {
+					fkByField[f.Name] = fk
+				}
+			}
+		}
+	}
 
 	var sb strings.Builder
 
 	// Imports
 	fmt.Fprintf(&sb, "import { useState, useEffect } from 'react';\n")
 	fmt.Fprintf(&sb, "import type { %s, Create%sInput } from '../types/%s';\n", structName, structName, singular)
-	fmt.Fprintf(&sb, "import { list%s, create%s, update%s, delete%s } from '../api/%s';\n\n", pluralName, structName, structName, structName, singular)
+	fmt.Fprintf(&sb, "import { list%s, create%s, update%s, delete%s } from '../api/%s';\n", pluralName, structName, structName, structName, singular)
+	for _, fk := range fkFields {
+		fmt.Fprintf(&sb, "import type { %s } from '../types/%s';\n", fk.refStruct, fk.refSingular)
+		fmt.Fprintf(&sb, "import { list%s } from '../api/%s';\n", fk.refPlural, fk.refSingular)
+	}
+	sb.WriteString("\n")
 
 	// EMPTY_FORM
 	fmt.Fprintf(&sb, "const EMPTY_FORM: Create%sInput = {\n", structName)
@@ -311,12 +397,38 @@ func GenerateReactPage(m Model) string {
 	fmt.Fprintf(&sb, "  const [items, setItems] = useState<%s[]>([]);\n", structName)
 	fmt.Fprintf(&sb, "  const [editing, setEditing] = useState<%s | null>(null);\n", structName)
 	fmt.Fprintf(&sb, "  const [form, setForm] = useState<Create%sInput>(EMPTY_FORM);\n", structName)
-	sb.WriteString("  const [showForm, setShowForm] = useState(false);\n\n")
+	sb.WriteString("  const [showForm, setShowForm] = useState(false);\n")
+	sb.WriteString("  const [page, setPage] = useState(1);\n")
+	sb.WriteString("  const [total, setTotal] = useState(0);\n")
+	sb.WriteString("  const limit = 20;\n")
+	for _, fk := range fkFields {
+		fmt.Fprintf(&sb, "  const [%s, %s] = useState<%s[]>([]);\n", fk.optionsVar, fk.setterVar, fk.refStruct)
+	}
+	sb.WriteString("\n")
 
-	sb.WriteString("  useEffect(() => { load(); }, []);\n\n")
+	if len(fkFields) > 0 {
+		sb.WriteString("  useEffect(() => { load(1); loadRefs(); }, []);\n\n")
+	} else {
+		sb.WriteString("  useEffect(() => { load(1); }, []);\n\n")
+	}
 
-	fmt.Fprintf(&sb, "  async function load() {\n")
-	fmt.Fprintf(&sb, "    try { setItems(await list%s()); } catch (e) { console.error(e); }\n", pluralName)
+	if len(fkFields) > 0 {
+		sb.WriteString("  async function loadRefs() {\n")
+		sb.WriteString("    try {\n")
+		for _, fk := range fkFields {
+			fmt.Fprintf(&sb, "      %s((await list%s(1, 1000)).data);\n", fk.setterVar, fk.refPlural)
+		}
+		sb.WriteString("    } catch (e) { console.error(e); }\n")
+		sb.WriteString("  }\n\n")
+	}
+
+	fmt.Fprintf(&sb, "  async function load(p: number) {\n")
+	sb.WriteString("    try {\n")
+	fmt.Fprintf(&sb, "      const res = await list%s(p, limit);\n", pluralName)
+	sb.WriteString("      setItems(res.data);\n")
+	sb.WriteString("      setTotal(res.total);\n")
+	sb.WriteString("      setPage(p);\n")
+	sb.WriteString("    } catch (e) { console.error(e); }\n")
 	sb.WriteString("  }\n\n")
 
 	sb.WriteString("  function openCreate() {\n")
@@ -329,6 +441,8 @@ func GenerateReactPage(m Model) string {
 	for _, f := range m.Fields {
 		if isDateType(f.Type) {
 			fmt.Fprintf(&sb, "      %s: item.%s ? (item.%s as string).slice(0, 10) : '',\n", f.Name, f.Name, f.Name)
+		} else if isDatetimeType(f.Type) {
+			fmt.Fprintf(&sb, "      %s: item.%s ? (item.%s as string).slice(0, 16) : '',\n", f.Name, f.Name, f.Name)
 		} else if f.Required {
 			fmt.Fprintf(&sb, "      %s: item.%s,\n", f.Name, f.Name)
 		} else {
@@ -342,18 +456,24 @@ func GenerateReactPage(m Model) string {
 	sb.WriteString("  async function handleSubmit(e: React.FormEvent) {\n")
 	sb.WriteString("    e.preventDefault();\n")
 	sb.WriteString("    try {\n")
-	// Collect date fields that need YYYY-MM-DD → RFC3339 conversion
+	// Collect fields needing date conversion
 	var dateFields []Field
+	var datetimeFields []Field
 	for _, f := range m.Fields {
 		if isDateType(f.Type) {
 			dateFields = append(dateFields, f)
+		} else if isDatetimeType(f.Type) {
+			datetimeFields = append(datetimeFields, f)
 		}
 	}
-	if len(dateFields) > 0 {
+	if len(dateFields) > 0 || len(datetimeFields) > 0 {
 		sb.WriteString("      const payload = {\n")
 		sb.WriteString("        ...form,\n")
 		for _, f := range dateFields {
 			fmt.Fprintf(&sb, "        %s: form.%s ? form.%s + 'T00:00:00Z' : form.%s,\n", f.Name, f.Name, f.Name, f.Name)
+		}
+		for _, f := range datetimeFields {
+			fmt.Fprintf(&sb, "        %s: form.%s ? form.%s + ':00Z' : form.%s,\n", f.Name, f.Name, f.Name, f.Name)
 		}
 		sb.WriteString("      };\n")
 		fmt.Fprintf(&sb, "      if (editing) await update%s(editing.id, payload);\n", structName)
@@ -362,13 +482,13 @@ func GenerateReactPage(m Model) string {
 		fmt.Fprintf(&sb, "      if (editing) await update%s(editing.id, form);\n", structName)
 		fmt.Fprintf(&sb, "      else await create%s(form);\n", structName)
 	}
-	sb.WriteString("      setShowForm(false); load();\n")
+	sb.WriteString("      setShowForm(false); load(page);\n")
 	sb.WriteString("    } catch (e) { console.error(e); }\n")
 	sb.WriteString("  }\n\n")
 
 	sb.WriteString("  async function handleDelete(id: number) {\n")
 	sb.WriteString("    if (!confirm('Delete?')) return;\n")
-	fmt.Fprintf(&sb, "    try { await delete%s(id); load(); } catch (e) { console.error(e); }\n", structName)
+	fmt.Fprintf(&sb, "    try { await delete%s(id); load(page); } catch (e) { console.error(e); }\n", structName)
 	sb.WriteString("  }\n\n")
 
 	// JSX
@@ -380,21 +500,33 @@ func GenerateReactPage(m Model) string {
 	sb.WriteString("      {showForm && (\n")
 	sb.WriteString("        <form onSubmit={handleSubmit}>\n")
 	for _, f := range m.Fields {
-		inputType := tsInputType(f.Type)
-		if inputType == "checkbox" {
-			fmt.Fprintf(&sb, "          <label>%s <input type=\"checkbox\" checked={form.%s as boolean} onChange={e => setForm({...form, %s: e.target.checked})} /></label>\n", f.Name, f.Name, f.Name)
-		} else if inputType == "number" {
+		if fk, isFk := fkByField[f.Name]; isFk {
+			// FK field → <select>
 			reqAttr := ""
 			if f.Required {
 				reqAttr = " required"
 			}
-			fmt.Fprintf(&sb, "          <label>%s <input type=\"number\" value={form.%s as number} onChange={e => setForm({...form, %s: Number(e.target.value)})}%s /></label>\n", f.Name, f.Name, f.Name, reqAttr)
+			fmt.Fprintf(&sb, "          <label>%s <select value={form.%s as number} onChange={e => setForm({...form, %s: Number(e.target.value)})}%s>\n", f.Name, f.Name, f.Name, reqAttr)
+			sb.WriteString("            <option value={0}>-- select --</option>\n")
+			fmt.Fprintf(&sb, "            {%s.map(opt => (<option key={opt.id} value={opt.id}>{opt.%s}</option>))}\n", fk.optionsVar, fk.labelField)
+			sb.WriteString("          </select></label>\n")
 		} else {
-			reqAttr := ""
-			if f.Required {
-				reqAttr = " required"
+			inputType := tsInputType(f.Type)
+			if inputType == "checkbox" {
+				fmt.Fprintf(&sb, "          <label>%s <input type=\"checkbox\" checked={form.%s as boolean} onChange={e => setForm({...form, %s: e.target.checked})} /></label>\n", f.Name, f.Name, f.Name)
+			} else if inputType == "number" {
+				reqAttr := ""
+				if f.Required {
+					reqAttr = " required"
+				}
+				fmt.Fprintf(&sb, "          <label>%s <input type=\"number\" value={form.%s as number} onChange={e => setForm({...form, %s: Number(e.target.value)})}%s /></label>\n", f.Name, f.Name, f.Name, reqAttr)
+			} else {
+				reqAttr := ""
+				if f.Required {
+					reqAttr = " required"
+				}
+				fmt.Fprintf(&sb, "          <label>%s <input type=\"%s\" value={form.%s as string} onChange={e => setForm({...form, %s: e.target.value})}%s /></label>\n", f.Name, inputType, f.Name, f.Name, reqAttr)
 			}
-			fmt.Fprintf(&sb, "          <label>%s <input type=\"%s\" value={form.%s as string} onChange={e => setForm({...form, %s: e.target.value})}%s /></label>\n", f.Name, inputType, f.Name, f.Name, reqAttr)
 		}
 	}
 	sb.WriteString("          <button type=\"submit\">{editing ? 'Save' : 'Create'}</button>\n")
@@ -427,6 +559,11 @@ func GenerateReactPage(m Model) string {
 	sb.WriteString("          ))}\n")
 	sb.WriteString("        </tbody>\n")
 	sb.WriteString("      </table>\n")
+	sb.WriteString("      <div>\n")
+	sb.WriteString("        <button onClick={() => load(page - 1)} disabled={page <= 1}>Prev</button>\n")
+	sb.WriteString("        <span>{page} / {Math.ceil(total / limit) || 1} ({total} total)</span>\n")
+	sb.WriteString("        <button onClick={() => load(page + 1)} disabled={page * limit >= total}>Next</button>\n")
+	sb.WriteString("      </div>\n")
 	sb.WriteString("    </div>\n")
 	sb.WriteString("  );\n")
 	sb.WriteString("}\n")
