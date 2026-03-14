@@ -1,9 +1,38 @@
 package generator
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
+	"text/template"
 )
+
+//go:embed templates/react_package_json.tmpl
+var reactPackageJSONTmpl string
+
+//go:embed templates/react_index_html.tmpl
+var reactIndexHTMLTmpl string
+
+//go:embed templates/react_vite_config.tmpl
+var reactViteConfigTmpl string
+
+//go:embed templates/react_tsconfig_json.tmpl
+var reactTsConfigTmpl string
+
+//go:embed templates/react_main_tsx.tmpl
+var reactMainTmpl string
+
+//go:embed templates/react_app_tsx.tmpl
+var reactAppTmpl string
+
+//go:embed templates/react_types_ts.tmpl
+var reactTypesTmpl string
+
+//go:embed templates/react_api_ts.tmpl
+var reactAPITmpl string
+
+//go:embed templates/react_page_tsx.tmpl
+var reactPageTmpl string
 
 // ModelStructName returns the PascalCase singular struct name for a model (e.g. "students" → "Student").
 func ModelStructName(m Model) string {
@@ -94,218 +123,146 @@ func tsInputType(sqlType string) string {
 	}
 }
 
+func execTmpl(name, src string, data any) string {
+	var buf strings.Builder
+	template.Must(template.New(name).Parse(src)).Execute(&buf, data) //nolint:errcheck
+	return buf.String()
+}
+
 // GenerateReactPackageJSON returns package.json for the React client.
 func GenerateReactPackageJSON(cfg *Config) string {
-	return fmt.Sprintf(`{
-  "name": "%s-client",
-  "version": "0.0.1",
-  "private": true,
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.5"
-  }
-}
-`, cfg.App.Name)
+	return execTmpl("react_package_json", reactPackageJSONTmpl, struct{ AppName string }{cfg.App.Name})
 }
 
 // GenerateReactIndexHTML returns index.html for the React client.
 func GenerateReactIndexHTML(cfg *Config) string {
-	return fmt.Sprintf(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>%s</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-`, cfg.App.Name)
+	return execTmpl("react_index_html", reactIndexHTMLTmpl, struct{ AppName string }{cfg.App.Name})
 }
 
 // GenerateReactViteConfig returns vite.config.ts for the React client.
 func GenerateReactViteConfig(cfg *Config) string {
-	var sb strings.Builder
-	sb.WriteString("import { defineConfig } from 'vite'\n")
-	sb.WriteString("import react from '@vitejs/plugin-react'\n\n")
-	sb.WriteString("export default defineConfig({\n")
-	sb.WriteString("  plugins: [react()],\n")
-	sb.WriteString("  server: {\n")
-	sb.WriteString("    proxy: {\n")
-	for _, m := range cfg.Models {
-		fmt.Fprintf(&sb, "      '/%s': 'http://localhost:%d',\n", m.Name, cfg.App.Port)
+	type proxyModel struct{ Name string }
+	models := make([]proxyModel, len(cfg.Models))
+	for i, m := range cfg.Models {
+		models[i] = proxyModel{m.Name}
 	}
-	sb.WriteString("    },\n")
-	sb.WriteString("  },\n")
-	sb.WriteString("})\n")
-	return sb.String()
+	return execTmpl("react_vite_config", reactViteConfigTmpl, struct {
+		Port   int
+		Models []proxyModel
+	}{cfg.App.Port, models})
 }
 
 // GenerateReactTsConfig returns tsconfig.json for the React client.
 func GenerateReactTsConfig() string {
-	return `{
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true
-  },
-  "include": ["src"]
-}
-`
+	return execTmpl("react_tsconfig_json", reactTsConfigTmpl, nil)
 }
 
 // GenerateReactMain returns src/main.tsx for the React client.
 func GenerateReactMain() string {
-	return `import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App'
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-`
+	return execTmpl("react_main_tsx", reactMainTmpl, nil)
 }
 
 // GenerateReactApp returns src/App.tsx with navigation and routes for all models.
 func GenerateReactApp(models []Model) string {
-	var sb strings.Builder
-	sb.WriteString("import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';\n")
-	for _, m := range models {
-		structName := toPascalCase(toSingular(m.Name))
-		fmt.Fprintf(&sb, "import %sPage from './pages/%sPage';\n", structName, structName)
+	type appModel struct {
+		Name       string
+		StructName string
 	}
-	sb.WriteString("\nexport default function App() {\n")
-	sb.WriteString("  return (\n")
-	sb.WriteString("    <BrowserRouter>\n")
-	sb.WriteString("      <nav>\n")
+	am := make([]appModel, len(models))
 	for i, m := range models {
-		structName := toPascalCase(toSingular(m.Name))
-		if i > 0 {
-			sb.WriteString("        {' | '}\n")
-		}
-		fmt.Fprintf(&sb, "        <NavLink to=\"/%s\">%s</NavLink>\n", m.Name, structName)
+		am[i] = appModel{m.Name, toPascalCase(toSingular(m.Name))}
 	}
-	sb.WriteString("      </nav>\n")
-	sb.WriteString("      <main>\n")
-	sb.WriteString("        <Routes>\n")
-	for _, m := range models {
-		structName := toPascalCase(toSingular(m.Name))
-		fmt.Fprintf(&sb, "          <Route path=\"/%s\" element={<%sPage />} />\n", m.Name, structName)
-	}
-	sb.WriteString("        </Routes>\n")
-	sb.WriteString("      </main>\n")
-	sb.WriteString("    </BrowserRouter>\n")
-	sb.WriteString("  );\n")
-	sb.WriteString("}\n")
-	return sb.String()
+	return execTmpl("react_app_tsx", reactAppTmpl, struct{ Models []appModel }{am})
 }
 
 // GenerateReactTypes returns src/types/{model}.ts with TypeScript interfaces for a model.
 func GenerateReactTypes(m Model) string {
-	structName := toPascalCase(toSingular(m.Name))
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "export interface %s {\n", structName)
-	sb.WriteString("  id: number;\n")
-	for _, f := range m.Fields {
-		tsType := sqlTypeToTS(f.Type)
-		if f.Required {
-			fmt.Fprintf(&sb, "  %s: %s;\n", f.Name, tsType)
-		} else {
-			fmt.Fprintf(&sb, "  %s?: %s;\n", f.Name, tsType)
-		}
+	type typeField struct {
+		Name     string
+		TSType   string
+		Required bool
 	}
-	sb.WriteString("  created_at: string;\n")
-	sb.WriteString("  updated_at: string;\n")
-	sb.WriteString("  deleted_at?: string;\n")
-	sb.WriteString("}\n\n")
-
-	fmt.Fprintf(&sb, "export type Create%sInput = {\n", structName)
-	for _, f := range m.Fields {
-		tsType := sqlTypeToTS(f.Type)
-		fmt.Fprintf(&sb, "  %s: %s;\n", f.Name, tsType)
+	fields := make([]typeField, len(m.Fields))
+	for i, f := range m.Fields {
+		fields[i] = typeField{f.Name, sqlTypeToTS(f.Type), f.Required}
 	}
-	sb.WriteString("};\n")
-
-	return sb.String()
+	return execTmpl("react_types_ts", reactTypesTmpl, struct {
+		StructName string
+		Fields     []typeField
+	}{toPascalCase(toSingular(m.Name)), fields})
 }
 
 // GenerateReactAPI returns src/api/{model}.ts with fetch wrappers for a model.
 func GenerateReactAPI(m Model) string {
 	singular := toSingular(m.Name)
-	structName := toPascalCase(singular)
-	pluralName := toPascalCase(m.Name)
+	return execTmpl("react_api_ts", reactAPITmpl, struct {
+		StructName string
+		Singular   string
+		PluralRaw  string
+		PluralName string
+	}{
+		StructName: toPascalCase(singular),
+		Singular:   singular,
+		PluralRaw:  m.Name,
+		PluralName: toPascalCase(m.Name),
+	})
+}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "import type { %s, Create%sInput } from '../types/%s';\n\n", structName, structName, singular)
-	fmt.Fprintf(&sb, "const BASE = '/%s';\n\n", m.Name)
+// --- react page template data types ---
 
-	fmt.Fprintf(&sb, "export interface Paginated%s { data: %s[]; total: number; page: number; limit: number; }\n\n", pluralName, structName)
+type pageFKImport struct {
+	RefStruct   string
+	RefSingular string
+	RefPlural   string
+	OptionsVar  string
+	SetterVar   string
+}
 
-	fmt.Fprintf(&sb, "export async function list%s(page = 1, limit = 20): Promise<Paginated%s> {\n", pluralName, pluralName)
-	sb.WriteString("  const res = await fetch(`${BASE}?page=${page}&limit=${limit}`);\n")
-	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
-	sb.WriteString("  return res.json();\n")
-	sb.WriteString("}\n\n")
+type pageFormField struct {
+	Name    string
+	Default string
+}
 
-	fmt.Fprintf(&sb, "export async function get%s(id: number): Promise<%s> {\n", structName, structName)
-	sb.WriteString("  const res = await fetch(`${BASE}/${id}`);\n")
-	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
-	sb.WriteString("  return res.json();\n")
-	sb.WriteString("}\n\n")
+type pageOpenEditField struct {
+	Name string
+	Expr string
+}
 
-	fmt.Fprintf(&sb, "export async function create%s(data: Create%sInput): Promise<%s> {\n", structName, structName, structName)
-	sb.WriteString("  const res = await fetch(BASE, {\n")
-	sb.WriteString("    method: 'POST',\n")
-	sb.WriteString("    headers: { 'Content-Type': 'application/json' },\n")
-	sb.WriteString("    body: JSON.stringify(data),\n")
-	sb.WriteString("  });\n")
-	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
-	sb.WriteString("  return res.json();\n")
-	sb.WriteString("}\n\n")
+type pagePayloadField struct {
+	Name string
+	Expr string
+}
 
-	fmt.Fprintf(&sb, "export async function update%s(id: number, data: Partial<Create%sInput>): Promise<%s> {\n", structName, structName, structName)
-	sb.WriteString("  const res = await fetch(`${BASE}/${id}`, {\n")
-	sb.WriteString("    method: 'PUT',\n")
-	sb.WriteString("    headers: { 'Content-Type': 'application/json' },\n")
-	sb.WriteString("    body: JSON.stringify(data),\n")
-	sb.WriteString("  });\n")
-	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
-	sb.WriteString("  return res.json();\n")
-	sb.WriteString("}\n\n")
+type pageFormInput struct {
+	FieldName  string
+	IsFK       bool
+	IsCheckbox bool
+	IsNumber   bool
+	InputType  string
+	Required   bool
+	OptionsVar string
+	LabelField string
+}
 
-	fmt.Fprintf(&sb, "export async function delete%s(id: number): Promise<void> {\n", structName)
-	sb.WriteString("  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE' });\n")
-	sb.WriteString("  if (!res.ok) throw new Error(await res.text());\n")
-	sb.WriteString("}\n")
+type pageTableCell struct {
+	Expr string
+}
 
-	return sb.String()
+type reactPageData struct {
+	StructName     string
+	Singular       string
+	PluralName     string
+	ComponentName  string
+	ModelName      string
+	HasFKs         bool
+	FKImports      []pageFKImport
+	FormFields     []pageFormField
+	OpenEditFields []pageOpenEditField
+	NeedsPayload   bool
+	PayloadFields  []pagePayloadField
+	FormInputs     []pageFormInput
+	TableHeaders   []string
+	TableCells     []pageTableCell
 }
 
 // GenerateReactPage returns src/pages/{Model}Page.tsx with a CRUD table and form for a model.
@@ -314,18 +271,17 @@ func GenerateReactPage(m Model, allModels []Model) string {
 	singular := toSingular(m.Name)
 	structName := toPascalCase(singular)
 	pluralName := toPascalCase(m.Name)
-	componentName := structName + "Page"
 
-	// Collect FK field metadata (deduplicated by referenced model name).
+	// ── FK resolution (deduplicated by referenced model name) ──────────────
 	type fkMeta struct {
 		field      Field
 		refModel   Model
 		labelField string
-		optionsVar string // e.g. "subjectOptions"
-		setterVar  string // e.g. "setSubjectOptions"
-		refStruct  string // e.g. "Subject"
-		refSingular string // e.g. "subject"
-		refPlural  string // e.g. "Subjects"
+		optionsVar string
+		setterVar  string
+		refStruct  string
+		refSingular string
+		refPlural  string
 	}
 	seenRef := map[string]bool{}
 	var fkFields []fkMeta
@@ -359,10 +315,9 @@ func GenerateReactPage(m Model, allModels []Model) string {
 			}
 		}
 	}
-	// Also map field name → fkMeta for form rendering.
+	// map field name → fkMeta for form rendering
 	fkByField := map[string]fkMeta{}
 	for _, fk := range fkFields {
-		// All FK fields referencing the same model share the same options state.
 		for _, f := range m.Fields {
 			if f.References != "" {
 				p := strings.SplitN(f.References, ".", 2)
@@ -373,200 +328,101 @@ func GenerateReactPage(m Model, allModels []Model) string {
 		}
 	}
 
-	var sb strings.Builder
-
-	// Imports
-	fmt.Fprintf(&sb, "import { useState, useEffect } from 'react';\n")
-	fmt.Fprintf(&sb, "import type { %s, Create%sInput } from '../types/%s';\n", structName, structName, singular)
-	fmt.Fprintf(&sb, "import { list%s, create%s, update%s, delete%s } from '../api/%s';\n", pluralName, structName, structName, structName, singular)
-	for _, fk := range fkFields {
-		fmt.Fprintf(&sb, "import type { %s } from '../types/%s';\n", fk.refStruct, fk.refSingular)
-		fmt.Fprintf(&sb, "import { list%s } from '../api/%s';\n", fk.refPlural, fk.refSingular)
-	}
-	sb.WriteString("\n")
-
-	// EMPTY_FORM
-	fmt.Fprintf(&sb, "const EMPTY_FORM: Create%sInput = {\n", structName)
-	for _, f := range m.Fields {
-		fmt.Fprintf(&sb, "  %s: %s,\n", f.Name, tsInputDefault(f.Type))
-	}
-	sb.WriteString("};\n\n")
-
-	// Component
-	fmt.Fprintf(&sb, "export default function %s() {\n", componentName)
-	fmt.Fprintf(&sb, "  const [items, setItems] = useState<%s[]>([]);\n", structName)
-	fmt.Fprintf(&sb, "  const [editing, setEditing] = useState<%s | null>(null);\n", structName)
-	fmt.Fprintf(&sb, "  const [form, setForm] = useState<Create%sInput>(EMPTY_FORM);\n", structName)
-	sb.WriteString("  const [showForm, setShowForm] = useState(false);\n")
-	sb.WriteString("  const [page, setPage] = useState(1);\n")
-	sb.WriteString("  const [total, setTotal] = useState(0);\n")
-	sb.WriteString("  const limit = 20;\n")
-	for _, fk := range fkFields {
-		fmt.Fprintf(&sb, "  const [%s, %s] = useState<%s[]>([]);\n", fk.optionsVar, fk.setterVar, fk.refStruct)
-	}
-	sb.WriteString("\n")
-
-	if len(fkFields) > 0 {
-		sb.WriteString("  useEffect(() => { load(1); loadRefs(); }, []);\n\n")
-	} else {
-		sb.WriteString("  useEffect(() => { load(1); }, []);\n\n")
-	}
-
-	if len(fkFields) > 0 {
-		sb.WriteString("  async function loadRefs() {\n")
-		sb.WriteString("    try {\n")
-		for _, fk := range fkFields {
-			fmt.Fprintf(&sb, "      %s((await list%s(1, 1000)).data);\n", fk.setterVar, fk.refPlural)
+	// ── FKImports ──────────────────────────────────────────────────────────
+	fkImports := make([]pageFKImport, len(fkFields))
+	for i, fk := range fkFields {
+		fkImports[i] = pageFKImport{
+			RefStruct:   fk.refStruct,
+			RefSingular: fk.refSingular,
+			RefPlural:   fk.refPlural,
+			OptionsVar:  fk.optionsVar,
+			SetterVar:   fk.setterVar,
 		}
-		sb.WriteString("    } catch (e) { console.error(e); }\n")
-		sb.WriteString("  }\n\n")
 	}
 
-	fmt.Fprintf(&sb, "  async function load(p: number) {\n")
-	sb.WriteString("    try {\n")
-	fmt.Fprintf(&sb, "      const res = await list%s(p, limit);\n", pluralName)
-	sb.WriteString("      setItems(res.data);\n")
-	sb.WriteString("      setTotal(res.total);\n")
-	sb.WriteString("      setPage(p);\n")
-	sb.WriteString("    } catch (e) { console.error(e); }\n")
-	sb.WriteString("  }\n\n")
+	// ── FormFields (EMPTY_FORM) ────────────────────────────────────────────
+	formFields := make([]pageFormField, len(m.Fields))
+	for i, f := range m.Fields {
+		formFields[i] = pageFormField{f.Name, tsInputDefault(f.Type)}
+	}
 
-	sb.WriteString("  function openCreate() {\n")
-	sb.WriteString("    setEditing(null); setForm(EMPTY_FORM); setShowForm(true);\n")
-	sb.WriteString("  }\n\n")
+	// ── OpenEditFields ────────────────────────────────────────────────────
+	openEditFields := make([]pageOpenEditField, len(m.Fields))
+	for i, f := range m.Fields {
+		var expr string
+		switch {
+		case isDateType(f.Type):
+			expr = fmt.Sprintf("item.%s ? (item.%s as string).slice(0, 10) : ''", f.Name, f.Name)
+		case isDatetimeType(f.Type):
+			expr = fmt.Sprintf("item.%s ? (item.%s as string).slice(0, 16) : ''", f.Name, f.Name)
+		case f.Required:
+			expr = "item." + f.Name
+		default:
+			expr = fmt.Sprintf("item.%s ?? %s", f.Name, tsInputDefault(f.Type))
+		}
+		openEditFields[i] = pageOpenEditField{f.Name, expr}
+	}
 
-	fmt.Fprintf(&sb, "  function openEdit(item: %s) {\n", structName)
-	sb.WriteString("    setEditing(item);\n")
-	sb.WriteString("    setForm({\n")
+	// ── PayloadFields ─────────────────────────────────────────────────────
+	var payloadFields []pagePayloadField
 	for _, f := range m.Fields {
+		var expr string
 		if isDateType(f.Type) {
-			fmt.Fprintf(&sb, "      %s: item.%s ? (item.%s as string).slice(0, 10) : '',\n", f.Name, f.Name, f.Name)
+			expr = fmt.Sprintf("form.%s ? form.%s + 'T00:00:00Z' : form.%s", f.Name, f.Name, f.Name)
 		} else if isDatetimeType(f.Type) {
-			fmt.Fprintf(&sb, "      %s: item.%s ? (item.%s as string).slice(0, 16) : '',\n", f.Name, f.Name, f.Name)
-		} else if f.Required {
-			fmt.Fprintf(&sb, "      %s: item.%s,\n", f.Name, f.Name)
+			expr = fmt.Sprintf("form.%s ? form.%s + ':00Z' : form.%s", f.Name, f.Name, f.Name)
 		} else {
-			fmt.Fprintf(&sb, "      %s: item.%s ?? %s,\n", f.Name, f.Name, tsInputDefault(f.Type))
+			continue
 		}
+		payloadFields = append(payloadFields, pagePayloadField{f.Name, expr})
 	}
-	sb.WriteString("    });\n")
-	sb.WriteString("    setShowForm(true);\n")
-	sb.WriteString("  }\n\n")
+	needsPayload := len(payloadFields) > 0
 
-	sb.WriteString("  async function handleSubmit(e: React.FormEvent) {\n")
-	sb.WriteString("    e.preventDefault();\n")
-	sb.WriteString("    try {\n")
-	// Collect fields needing date conversion
-	var dateFields []Field
-	var datetimeFields []Field
-	for _, f := range m.Fields {
-		if isDateType(f.Type) {
-			dateFields = append(dateFields, f)
-		} else if isDatetimeType(f.Type) {
-			datetimeFields = append(datetimeFields, f)
-		}
-	}
-	if len(dateFields) > 0 || len(datetimeFields) > 0 {
-		sb.WriteString("      const payload = {\n")
-		sb.WriteString("        ...form,\n")
-		for _, f := range dateFields {
-			fmt.Fprintf(&sb, "        %s: form.%s ? form.%s + 'T00:00:00Z' : form.%s,\n", f.Name, f.Name, f.Name, f.Name)
-		}
-		for _, f := range datetimeFields {
-			fmt.Fprintf(&sb, "        %s: form.%s ? form.%s + ':00Z' : form.%s,\n", f.Name, f.Name, f.Name, f.Name)
-		}
-		sb.WriteString("      };\n")
-		fmt.Fprintf(&sb, "      if (editing) await update%s(editing.id, payload);\n", structName)
-		fmt.Fprintf(&sb, "      else await create%s(payload);\n", structName)
-	} else {
-		fmt.Fprintf(&sb, "      if (editing) await update%s(editing.id, form);\n", structName)
-		fmt.Fprintf(&sb, "      else await create%s(form);\n", structName)
-	}
-	sb.WriteString("      setShowForm(false); load(page);\n")
-	sb.WriteString("    } catch (e) { console.error(e); }\n")
-	sb.WriteString("  }\n\n")
-
-	sb.WriteString("  async function handleDelete(id: number) {\n")
-	sb.WriteString("    if (!confirm('Delete?')) return;\n")
-	fmt.Fprintf(&sb, "    try { await delete%s(id); load(page); } catch (e) { console.error(e); }\n", structName)
-	sb.WriteString("  }\n\n")
-
-	// JSX
-	sb.WriteString("  return (\n")
-	sb.WriteString("    <div>\n")
-	fmt.Fprintf(&sb, "      <h1>%s</h1>\n", m.Name)
-	sb.WriteString("      <button onClick={openCreate}>+ New</button>\n")
-
-	sb.WriteString("      {showForm && (\n")
-	sb.WriteString("        <form onSubmit={handleSubmit}>\n")
-	for _, f := range m.Fields {
+	// ── FormInputs ────────────────────────────────────────────────────────
+	formInputs := make([]pageFormInput, len(m.Fields))
+	for i, f := range m.Fields {
+		fi := pageFormInput{FieldName: f.Name, Required: f.Required}
 		if fk, isFk := fkByField[f.Name]; isFk {
-			// FK field → <select>
-			reqAttr := ""
-			if f.Required {
-				reqAttr = " required"
-			}
-			fmt.Fprintf(&sb, "          <label>%s <select value={form.%s as number} onChange={e => setForm({...form, %s: Number(e.target.value)})}%s>\n", f.Name, f.Name, f.Name, reqAttr)
-			sb.WriteString("            <option value={0}>-- select --</option>\n")
-			fmt.Fprintf(&sb, "            {%s.map(opt => (<option key={opt.id} value={opt.id}>{opt.%s}</option>))}\n", fk.optionsVar, fk.labelField)
-			sb.WriteString("          </select></label>\n")
+			fi.IsFK = true
+			fi.OptionsVar = fk.optionsVar
+			fi.LabelField = fk.labelField
 		} else {
-			inputType := tsInputType(f.Type)
-			if inputType == "checkbox" {
-				fmt.Fprintf(&sb, "          <label>%s <input type=\"checkbox\" checked={form.%s as boolean} onChange={e => setForm({...form, %s: e.target.checked})} /></label>\n", f.Name, f.Name, f.Name)
-			} else if inputType == "number" {
-				reqAttr := ""
-				if f.Required {
-					reqAttr = " required"
-				}
-				fmt.Fprintf(&sb, "          <label>%s <input type=\"number\" value={form.%s as number} onChange={e => setForm({...form, %s: Number(e.target.value)})}%s /></label>\n", f.Name, f.Name, f.Name, reqAttr)
-			} else {
-				reqAttr := ""
-				if f.Required {
-					reqAttr = " required"
-				}
-				fmt.Fprintf(&sb, "          <label>%s <input type=\"%s\" value={form.%s as string} onChange={e => setForm({...form, %s: e.target.value})}%s /></label>\n", f.Name, inputType, f.Name, f.Name, reqAttr)
-			}
+			it := tsInputType(f.Type)
+			fi.InputType = it
+			fi.IsCheckbox = it == "checkbox"
+			fi.IsNumber = it == "number"
 		}
+		formInputs[i] = fi
 	}
-	sb.WriteString("          <button type=\"submit\">{editing ? 'Save' : 'Create'}</button>\n")
-	sb.WriteString("          <button type=\"button\" onClick={() => setShowForm(false)}>Cancel</button>\n")
-	sb.WriteString("        </form>\n")
-	sb.WriteString("      )}\n")
 
-	sb.WriteString("      <table>\n")
-	sb.WriteString("        <thead><tr><th>id</th>")
-	for _, f := range m.Fields {
-		fmt.Fprintf(&sb, "<th>%s</th>", f.Name)
-	}
-	sb.WriteString("<th></th></tr></thead>\n")
-	sb.WriteString("        <tbody>\n")
-	sb.WriteString("          {items.map(item => (\n")
-	sb.WriteString("            <tr key={item.id}>\n")
-	sb.WriteString("              <td>{item.id}</td>\n")
-	for _, f := range m.Fields {
+	// ── TableHeaders / TableCells ─────────────────────────────────────────
+	headers := make([]string, len(m.Fields))
+	cells := make([]pageTableCell, len(m.Fields))
+	for i, f := range m.Fields {
+		headers[i] = f.Name
 		if sqlTypeToTS(f.Type) == "boolean" {
-			fmt.Fprintf(&sb, "              <td>{item.%s ? 'yes' : 'no'}</td>\n", f.Name)
+			cells[i] = pageTableCell{fmt.Sprintf("{item.%s ? 'yes' : 'no'}", f.Name)}
 		} else {
-			fmt.Fprintf(&sb, "              <td>{item.%s}</td>\n", f.Name)
+			cells[i] = pageTableCell{"{item." + f.Name + "}"}
 		}
 	}
-	sb.WriteString("              <td>\n")
-	sb.WriteString("                <button onClick={() => openEdit(item)}>Edit</button>\n")
-	sb.WriteString("                <button onClick={() => handleDelete(item.id)}>Del</button>\n")
-	sb.WriteString("              </td>\n")
-	sb.WriteString("            </tr>\n")
-	sb.WriteString("          ))}\n")
-	sb.WriteString("        </tbody>\n")
-	sb.WriteString("      </table>\n")
-	sb.WriteString("      <div>\n")
-	sb.WriteString("        <button onClick={() => load(page - 1)} disabled={page <= 1}>Prev</button>\n")
-	sb.WriteString("        <span>{page} / {Math.ceil(total / limit) || 1} ({total} total)</span>\n")
-	sb.WriteString("        <button onClick={() => load(page + 1)} disabled={page * limit >= total}>Next</button>\n")
-	sb.WriteString("      </div>\n")
-	sb.WriteString("    </div>\n")
-	sb.WriteString("  );\n")
-	sb.WriteString("}\n")
 
-	return sb.String()
+	data := reactPageData{
+		StructName:     structName,
+		Singular:       singular,
+		PluralName:     pluralName,
+		ComponentName:  structName + "Page",
+		ModelName:      m.Name,
+		HasFKs:         len(fkFields) > 0,
+		FKImports:      fkImports,
+		FormFields:     formFields,
+		OpenEditFields: openEditFields,
+		NeedsPayload:   needsPayload,
+		PayloadFields:  payloadFields,
+		FormInputs:     formInputs,
+		TableHeaders:   headers,
+		TableCells:     cells,
+	}
+
+	return execTmpl("react_page_tsx", reactPageTmpl, data)
 }
