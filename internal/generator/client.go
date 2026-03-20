@@ -402,7 +402,11 @@ func GenerateReactPage(m Model, allModels []Model) string {
 		if fk, isFk := fkByField[f.Name]; isFk {
 			fi.IsFK = true
 			fi.OptionsVar = fk.optionsVar
-			fi.LabelField = fk.labelField
+			labelF := f.DisplayField
+			if labelF == "" {
+				labelF = fk.labelField
+			}
+			fi.LabelField = labelF
 		} else {
 			it := tsInputType(f.Type)
 			fi.InputType = it
@@ -417,7 +421,13 @@ func GenerateReactPage(m Model, allModels []Model) string {
 	cells := make([]pageTableCell, len(m.Fields))
 	for i, f := range m.Fields {
 		headers[i] = fieldLabel(f)
-		if sqlTypeToTS(f.Type) == "boolean" {
+		if fk, isFk := fkByField[f.Name]; isFk {
+			labelF := f.DisplayField
+			if labelF == "" {
+				labelF = fk.labelField
+			}
+			cells[i] = pageTableCell{fmt.Sprintf("{%s.find(o => o.id === item.%s)?.%s ?? String(item.%s)}", fk.optionsVar, f.Name, labelF, f.Name)}
+		} else if sqlTypeToTS(f.Type) == "boolean" {
 			cells[i] = pageTableCell{fmt.Sprintf("{item.%s ? 'yes' : 'no'}", f.Name)}
 		} else {
 			cells[i] = pageTableCell{"{item." + f.Name + "}"}

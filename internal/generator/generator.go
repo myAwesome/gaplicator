@@ -60,14 +60,15 @@ type Model struct {
 }
 
 type Field struct {
-	Name       string `yaml:"name"`
-	Type       string `yaml:"type"`
-	Required   bool   `yaml:"required"`
-	Unique     bool   `yaml:"unique"`
-	Default    any    `yaml:"default"`
-	References string `yaml:"references"`
-	Index      bool   `yaml:"index"`
-	Label      string `yaml:"label"`
+	Name         string `yaml:"name"`
+	Type         string `yaml:"type"`
+	Required     bool   `yaml:"required"`
+	Unique       bool   `yaml:"unique"`
+	Default      any    `yaml:"default"`
+	References   string `yaml:"references"`
+	DisplayField string `yaml:"display_field"`
+	Index        bool   `yaml:"index"`
+	Label        string `yaml:"label"`
 }
 
 var validIdentRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

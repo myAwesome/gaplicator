@@ -64,6 +64,7 @@ All models automatically include `id`, `created_at`, `updated_at`, and `deleted_
 | `default` | any | no | Column default value. |
 | `index` | bool | no | Creates a non-unique database index (`CREATE INDEX IF NOT EXISTS`). Ignored when `unique: true`. Default: `false`. |
 | `references` | string | no | Foreign key in `model.field` format (e.g. `users.id`). The referenced model **and field** must exist in the same config (`id` is always valid as it is auto-generated). |
+| `display_field` | string | no | Field from the referenced model to use as the display label in the UI — in form dropdowns and table cells. Only meaningful when `references` is set. Defaults to the first `name` or `title` field of the referenced model, or its first field if neither exists. |
 | `label` | string | no | Human-readable display name used in React form `<label>` elements and table column headers. Defaults to the field `name`. |
 
 #### Field types
