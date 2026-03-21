@@ -5,6 +5,63 @@ import (
 	"testing"
 )
 
+// ── ValidateConfig display_field tests ─────────────────────────────────────
+
+func TestValidateConfig_DisplayField_Valid(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "teachers", Fields: []Field{{Name: "full_name", Type: "text", Required: true}}},
+			{Name: "lessons", Fields: []Field{
+				{Name: "teacher_id", Type: "int", References: "teachers.id", DisplayField: "full_name"},
+			}},
+		},
+	}
+	if errs := ValidateConfig(cfg); len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateConfig_DisplayField_WithoutReferences(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "items", Fields: []Field{
+				{Name: "title", Type: "text", DisplayField: "name"},
+			}},
+		},
+	}
+	errs := ValidateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for display_field without references, got none")
+	}
+	if !strings.Contains(errs[0].Error(), "display_field requires references") {
+		t.Errorf("unexpected error message: %v", errs[0])
+	}
+}
+
+func TestValidateConfig_DisplayField_UnknownField(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "teachers", Fields: []Field{{Name: "full_name", Type: "text"}}},
+			{Name: "lessons", Fields: []Field{
+				{Name: "teacher_id", Type: "int", References: "teachers.id", DisplayField: "nonexistent"},
+			}},
+		},
+	}
+	errs := ValidateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for display_field referencing unknown field, got none")
+	}
+	if !strings.Contains(errs[0].Error(), "display_field") || !strings.Contains(errs[0].Error(), "nonexistent") {
+		t.Errorf("unexpected error message: %v", errs[0])
+	}
+}
+
 var ginTestModels = []Model{
 	{Name: "students", Fields: []Field{{Name: "first_name", Type: "varchar(100)", Required: true}}},
 	{Name: "subjects", Fields: []Field{{Name: "name", Type: "varchar(200)", Required: true}}},
@@ -1030,6 +1087,72 @@ func TestGenerateReactPage_FKLabelFallback(t *testing.T) {
 
 	if !strings.Contains(out, "opt.value") {
 		t.Error("expected opt.value as label for model with no name/title field")
+	}
+}
+
+func TestGenerateReactPage_DisplayField_Form(t *testing.T) {
+	// display_field overrides auto-detected label in form dropdown
+	allModels := []Model{
+		{Name: "teachers", Fields: []Field{
+			{Name: "full_name", Type: "varchar(200)", Required: true},
+			{Name: "code", Type: "varchar(10)", Required: true},
+		}},
+		{Name: "lessons", Fields: []Field{
+			{Name: "teacher_id", Type: "int", References: "teachers.id", DisplayField: "full_name"},
+		}},
+	}
+	out := GenerateReactPage(allModels[1], allModels)
+
+	if !strings.Contains(out, "opt.full_name") {
+		t.Error("expected opt.full_name in form dropdown when display_field=full_name")
+	}
+	// Should not fall back to auto-detected first field (code)
+	if strings.Contains(out, "opt.code") {
+		t.Error("unexpected opt.code in form dropdown when display_field overrides")
+	}
+}
+
+func TestGenerateReactPage_DisplayField_Table(t *testing.T) {
+	// display_field is used in table cell lookup expression
+	allModels := []Model{
+		{Name: "subjects", Fields: []Field{
+			{Name: "code", Type: "varchar(10)", Required: true},
+			{Name: "title", Type: "varchar(200)", Required: true},
+		}},
+		{Name: "lessons", Fields: []Field{
+			{Name: "subject_id", Type: "int", References: "subjects.id", DisplayField: "code"},
+		}},
+	}
+	out := GenerateReactPage(allModels[1], allModels)
+
+	// Table cell should use options lookup with the specified display_field
+	if !strings.Contains(out, "subjectOptions.find") {
+		t.Error("expected options lookup in table cell for FK field")
+	}
+	if !strings.Contains(out, ".code") {
+		t.Error("expected .code in table cell lookup when display_field=code")
+	}
+	// Should not use auto-detected label (title) in table
+	if strings.Contains(out, "?.title") {
+		t.Error("unexpected ?.title in table cell when display_field=code overrides")
+	}
+}
+
+func TestGenerateReactPage_FKTable_DefaultLabel(t *testing.T) {
+	// Without display_field, table cell should use auto-detected label
+	allModels := []Model{
+		{Name: "subjects", Fields: []Field{{Name: "name", Type: "varchar(200)", Required: true}}},
+		{Name: "lessons", Fields: []Field{
+			{Name: "subject_id", Type: "int", References: "subjects.id"},
+		}},
+	}
+	out := GenerateReactPage(allModels[1], allModels)
+
+	if !strings.Contains(out, "subjectOptions.find") {
+		t.Error("expected options lookup in table cell for FK field")
+	}
+	if !strings.Contains(out, "?.name") {
+		t.Error("expected ?.name in table cell with auto-detected label")
 	}
 }
 

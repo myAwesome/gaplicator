@@ -60,14 +60,15 @@ type Model struct {
 }
 
 type Field struct {
-	Name       string `yaml:"name"`
-	Type       string `yaml:"type"`
-	Required   bool   `yaml:"required"`
-	Unique     bool   `yaml:"unique"`
-	Default    any    `yaml:"default"`
-	References string `yaml:"references"`
-	Index      bool   `yaml:"index"`
-	Label      string `yaml:"label"`
+	Name         string `yaml:"name"`
+	Type         string `yaml:"type"`
+	Required     bool   `yaml:"required"`
+	Unique       bool   `yaml:"unique"`
+	Default      any    `yaml:"default"`
+	References   string `yaml:"references"`
+	DisplayField string `yaml:"display_field"`
+	Index        bool   `yaml:"index"`
+	Label        string `yaml:"label"`
 }
 
 var validIdentRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -199,7 +200,14 @@ func ValidateConfig(cfg *Config) []error {
 					errs = append(errs, fmt.Errorf("%s: references unknown model %q", fprefix, parts[0]))
 				} else if fields, ok := modelFields[parts[0]]; ok && !fields[parts[1]] {
 					errs = append(errs, fmt.Errorf("%s: references unknown field %q in model %q", fprefix, parts[1], parts[0]))
+				} else if f.DisplayField != "" {
+					refModel := parts[0]
+					if fields, ok := modelFields[refModel]; ok && !fields[f.DisplayField] {
+						errs = append(errs, fmt.Errorf("%s: display_field %q does not exist in model %q", fprefix, f.DisplayField, refModel))
+					}
 				}
+			} else if f.DisplayField != "" {
+				errs = append(errs, fmt.Errorf("%s: display_field requires references to be set", fprefix))
 			}
 		}
 	}
