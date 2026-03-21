@@ -85,6 +85,13 @@ export default function {{.ComponentName}}() {
                 { {{.OptionsVar}}.map(opt => (<option key={opt.id} value={opt.id}>{opt.{{.LabelField}}}</option>))}
               </select>
             </div>
+{{else if .IsEnum}}            <div className="form-group">
+              <label className="form-label">{{.Label}}</label>
+              <select className="form-select" value={form.{{.FieldName}} as string} onChange={e => setForm({...form, {{.FieldName}}: e.target.value})}{{if .Required}} required{{end}}>
+                <option value="">-- select --</option>
+                {{range .EnumValues}}<option value="{{.}}">{{.}}</option>
+                {{end}}</select>
+            </div>
 {{else if .IsCheckbox}}            <div className="form-group form-group--checkbox">
               <label className="form-label"><input type="checkbox" checked={form.{{.FieldName}} as boolean} onChange={e => setForm({...form, {{.FieldName}}: e.target.checked})} /> {{.Label}}</label>
             </div>

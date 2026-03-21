@@ -1180,6 +1180,138 @@ func TestGenerateReactPage_DateTableCell(t *testing.T) {
 	}
 }
 
+// ── Enum field type tests ────────────────────────────────────────────────────
+
+func TestValidateConfig_EnumField_Valid(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "posts", Fields: []Field{
+				{Name: "title", Type: "text", Required: true},
+				{Name: "status", Type: "enum", Values: []string{"draft", "published", "archived"}},
+			}},
+		},
+	}
+	if errs := ValidateConfig(cfg); len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateConfig_EnumField_NoValues(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "posts", Fields: []Field{
+				{Name: "status", Type: "enum"},
+			}},
+		},
+	}
+	errs := ValidateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for enum without values, got none")
+	}
+	if !strings.Contains(errs[0].Error(), "enum type requires") {
+		t.Errorf("unexpected error message: %v", errs[0])
+	}
+}
+
+func TestGenerateMigrationUp_EnumCheckConstraint(t *testing.T) {
+	models := []Model{
+		{Name: "posts", Fields: []Field{
+			{Name: "status", Type: "enum", Values: []string{"draft", "published", "archived"}, Required: true},
+		}},
+	}
+	out := GenerateMigrationUp(models)
+
+	if !strings.Contains(out, "status TEXT CHECK (status IN ('draft', 'published', 'archived'))") {
+		t.Errorf("expected CHECK constraint for enum field, got:\n%s", out)
+	}
+	if !strings.Contains(out, "NOT NULL") {
+		t.Error("expected NOT NULL for required enum field")
+	}
+	if strings.Contains(out, "ENUM") {
+		t.Error("should not output raw ENUM SQL type")
+	}
+}
+
+func TestGenerateGORMModels_EnumField(t *testing.T) {
+	models := []Model{
+		{Name: "posts", Fields: []Field{
+			{Name: "status", Type: "enum", Values: []string{"draft", "published"}, Required: true},
+		}},
+	}
+	out := GenerateGORMModels(models, "models")
+
+	if !strings.Contains(out, "Status") || !strings.Contains(out, "string") {
+		t.Errorf("expected 'Status' field with 'string' type in GORM model, got:\n%s", out)
+	}
+	if strings.Contains(out, "Status interface{}") {
+		t.Error("enum field should map to string, not interface{}")
+	}
+}
+
+func TestGenerateReactPage_EnumSelect(t *testing.T) {
+	m := Model{
+		Name: "posts",
+		Fields: []Field{
+			{Name: "title", Type: "text", Required: true},
+			{Name: "status", Type: "enum", Values: []string{"draft", "published", "archived"}, Required: true},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	// Form should have a select dropdown with enum values
+	if !strings.Contains(out, `<select`) {
+		t.Error("expected <select> for enum field in form")
+	}
+	if !strings.Contains(out, `<option value="draft">draft</option>`) {
+		t.Error("expected option for 'draft' value")
+	}
+	if !strings.Contains(out, `<option value="published">published</option>`) {
+		t.Error("expected option for 'published' value")
+	}
+	if !strings.Contains(out, `<option value="archived">archived</option>`) {
+		t.Error("expected option for 'archived' value")
+	}
+	// Should not render as number input
+	if strings.Contains(out, `type="number"`) {
+		t.Error("enum field should use <select>, not a number input")
+	}
+}
+
+func TestGenerateReactPage_EnumBadgeCell(t *testing.T) {
+	m := Model{
+		Name: "posts",
+		Fields: []Field{
+			{Name: "status", Type: "enum", Values: []string{"draft", "published", "archived"}},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	if !strings.Contains(out, `badge badge--`) {
+		t.Error("expected badge class in table cell for enum field")
+	}
+	if !strings.Contains(out, `item.status`) {
+		t.Error("expected item.status in enum table cell")
+	}
+}
+
+func TestGenerateReactTypes_EnumFieldIsString(t *testing.T) {
+	m := Model{
+		Name: "posts",
+		Fields: []Field{
+			{Name: "status", Type: "enum", Values: []string{"draft", "published"}},
+		},
+	}
+	out := GenerateReactTypes(m)
+
+	if !strings.Contains(out, "status?: string") {
+		t.Errorf("expected 'status?: string' for optional enum field in TypeScript interface, got:\n%s", out)
+	}
+}
+
 func TestGenerateShutdownScript_DockerDown(t *testing.T) {
 	out, err := GenerateShutdownScript()
 	if err != nil {

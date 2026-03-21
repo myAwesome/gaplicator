@@ -58,6 +58,11 @@ func isDatetimeType(sqlType string) bool {
 	return lower == "datetime" || lower == "timestamp"
 }
 
+// isEnumType returns true if the SQL type is enum.
+func isEnumType(sqlType string) bool {
+	return strings.ToLower(sqlType) == "enum"
+}
+
 // fieldLabel returns the display label for a field: Label if set, else Name.
 func fieldLabel(f Field) string {
 	if f.Label != "" {
@@ -83,7 +88,7 @@ func findLabelField(m Model) string {
 func sqlTypeToTS(sqlType string) string {
 	lower := strings.ToLower(sqlType)
 	switch {
-	case strings.HasPrefix(lower, "varchar"), strings.HasPrefix(lower, "char"), lower == "text", lower == "uuid":
+	case strings.HasPrefix(lower, "varchar"), strings.HasPrefix(lower, "char"), lower == "text", lower == "uuid", lower == "enum":
 		return "string"
 	case lower == "int", lower == "bigint", lower == "smallint":
 		return "number"
@@ -253,12 +258,14 @@ type pageFormInput struct {
 	FieldName  string
 	Label      string
 	IsFK       bool
+	IsEnum     bool
 	IsCheckbox bool
 	IsNumber   bool
 	InputType  string
 	Required   bool
 	OptionsVar string
 	LabelField string
+	EnumValues []string
 }
 
 type pageTableCell struct {
@@ -407,6 +414,9 @@ func GenerateReactPage(m Model, allModels []Model) string {
 				labelF = fk.labelField
 			}
 			fi.LabelField = labelF
+		} else if isEnumType(f.Type) {
+			fi.IsEnum = true
+			fi.EnumValues = f.Values
 		} else {
 			it := tsInputType(f.Type)
 			fi.InputType = it
@@ -427,6 +437,8 @@ func GenerateReactPage(m Model, allModels []Model) string {
 				labelF = fk.labelField
 			}
 			cells[i] = pageTableCell{fmt.Sprintf("{%s.find(o => o.id === item.%s)?.%s ?? String(item.%s)}", fk.optionsVar, f.Name, labelF, f.Name)}
+		} else if isEnumType(f.Type) {
+			cells[i] = pageTableCell{fmt.Sprintf(`<span className={"badge badge--" + (item.%s as string)}>{item.%s}</span>`, f.Name, f.Name)}
 		} else if sqlTypeToTS(f.Type) == "boolean" {
 			cells[i] = pageTableCell{fmt.Sprintf("{item.%s ? 'yes' : 'no'}", f.Name)}
 		} else if isDateType(f.Type) {
