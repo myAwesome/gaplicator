@@ -5,6 +5,63 @@ import (
 	"testing"
 )
 
+// ── ValidateConfig display_field tests ─────────────────────────────────────
+
+func TestValidateConfig_DisplayField_Valid(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "teachers", Fields: []Field{{Name: "full_name", Type: "text", Required: true}}},
+			{Name: "lessons", Fields: []Field{
+				{Name: "teacher_id", Type: "int", References: "teachers.id", DisplayField: "full_name"},
+			}},
+		},
+	}
+	if errs := ValidateConfig(cfg); len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateConfig_DisplayField_WithoutReferences(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "items", Fields: []Field{
+				{Name: "title", Type: "text", DisplayField: "name"},
+			}},
+		},
+	}
+	errs := ValidateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for display_field without references, got none")
+	}
+	if !strings.Contains(errs[0].Error(), "display_field requires references") {
+		t.Errorf("unexpected error message: %v", errs[0])
+	}
+}
+
+func TestValidateConfig_DisplayField_UnknownField(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "teachers", Fields: []Field{{Name: "full_name", Type: "text"}}},
+			{Name: "lessons", Fields: []Field{
+				{Name: "teacher_id", Type: "int", References: "teachers.id", DisplayField: "nonexistent"},
+			}},
+		},
+	}
+	errs := ValidateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for display_field referencing unknown field, got none")
+	}
+	if !strings.Contains(errs[0].Error(), "display_field") || !strings.Contains(errs[0].Error(), "nonexistent") {
+		t.Errorf("unexpected error message: %v", errs[0])
+	}
+}
+
 var ginTestModels = []Model{
 	{Name: "students", Fields: []Field{{Name: "first_name", Type: "varchar(100)", Required: true}}},
 	{Name: "subjects", Fields: []Field{{Name: "name", Type: "varchar(200)", Required: true}}},
