@@ -60,15 +60,16 @@ type Model struct {
 }
 
 type Field struct {
-	Name         string `yaml:"name"`
-	Type         string `yaml:"type"`
-	Required     bool   `yaml:"required"`
-	Unique       bool   `yaml:"unique"`
-	Default      any    `yaml:"default"`
-	References   string `yaml:"references"`
-	DisplayField string `yaml:"display_field"`
-	Index        bool   `yaml:"index"`
-	Label        string `yaml:"label"`
+	Name         string   `yaml:"name"`
+	Type         string   `yaml:"type"`
+	Values       []string `yaml:"values"`
+	Required     bool     `yaml:"required"`
+	Unique       bool     `yaml:"unique"`
+	Default      any      `yaml:"default"`
+	References   string   `yaml:"references"`
+	DisplayField string   `yaml:"display_field"`
+	Index        bool     `yaml:"index"`
+	Label        string   `yaml:"label"`
 }
 
 var validIdentRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -186,6 +187,10 @@ func ValidateConfig(cfg *Config) []error {
 
 			if f.Type == "" {
 				errs = append(errs, fmt.Errorf("%s: type is required", fprefix))
+			} else if strings.ToLower(f.Type) == "enum" {
+				if len(f.Values) == 0 {
+					errs = append(errs, fmt.Errorf("%s: enum type requires at least one value in 'values'", fprefix))
+				}
 			} else if !validTypeRe.MatchString(strings.ToLower(f.Type)) {
 				errs = append(errs, fmt.Errorf("%s: unknown type %q", fprefix, f.Type))
 			}
@@ -242,7 +247,7 @@ func tableSQL(m Model) string {
 	sb.WriteString("    id SERIAL PRIMARY KEY")
 	for _, f := range m.Fields {
 		sb.WriteString(",\n")
-		fmt.Fprintf(&sb, "    %s %s", f.Name, strings.ToUpper(f.Type))
+		fmt.Fprintf(&sb, "    %s %s", f.Name, fieldSQLType(f))
 		if f.Required {
 			sb.WriteString(" NOT NULL")
 		}
@@ -264,6 +269,17 @@ func tableSQL(m Model) string {
 		}
 	}
 	return sb.String()
+}
+
+func fieldSQLType(f Field) string {
+	if strings.ToLower(f.Type) == "enum" {
+		quotedValues := make([]string, len(f.Values))
+		for i, v := range f.Values {
+			quotedValues[i] = "'" + strings.ReplaceAll(v, "'", "''") + "'"
+		}
+		return fmt.Sprintf("TEXT CHECK (%s IN (%s))", f.Name, strings.Join(quotedValues, ", "))
+	}
+	return strings.ToUpper(f.Type)
 }
 
 func formatDefault(v any) string {
@@ -353,7 +369,7 @@ func toPascalCase(s string) string {
 func sqlTypeToGo(sqlType string) string {
 	lower := strings.ToLower(sqlType)
 	switch {
-	case strings.HasPrefix(lower, "varchar"), strings.HasPrefix(lower, "char"), lower == "text", lower == "uuid":
+	case strings.HasPrefix(lower, "varchar"), strings.HasPrefix(lower, "char"), lower == "text", lower == "uuid", lower == "enum":
 		return "string"
 	case lower == "int", lower == "smallint":
 		return "int"
