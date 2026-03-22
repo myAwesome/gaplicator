@@ -277,6 +277,17 @@ type pageTableColumn struct {
 	Key   string
 }
 
+type pageFilterField struct {
+	FieldName  string
+	Label      string
+	IsEnum     bool
+	EnumValues []string
+	IsFK       bool
+	OptionsVar string
+	LabelField string
+	IsBool     bool
+}
+
 type reactPageData struct {
 	StructName     string
 	Singular       string
@@ -292,6 +303,9 @@ type reactPageData struct {
 	FormInputs     []pageFormInput
 	TableColumns   []pageTableColumn
 	TableCells     []pageTableCell
+	HasSearch      bool
+	HasFilters     bool
+	FilterFields   []pageFilterField
 }
 
 // GenerateReactPage returns src/pages/{Model}Page.tsx with a CRUD table and form for a model.
@@ -455,6 +469,45 @@ func GenerateReactPage(m Model, allModels []Model) string {
 		}
 	}
 
+	// ── FilterFields (search + enum, FK, bool dropdowns) ─────────────────────
+	var filterFields []pageFilterField
+	hasSearch := false
+	for _, f := range m.Fields {
+		lower := strings.ToLower(f.Type)
+		isText := strings.HasPrefix(lower, "text") || strings.HasPrefix(lower, "varchar") || strings.HasPrefix(lower, "char")
+		if isText {
+			hasSearch = true
+			continue
+		}
+		if fk, isFk := fkByField[f.Name]; isFk {
+			labelF := f.DisplayField
+			if labelF == "" {
+				labelF = fk.labelField
+			}
+			filterFields = append(filterFields, pageFilterField{
+				FieldName:  f.Name,
+				Label:      fieldLabel(f),
+				IsFK:       true,
+				OptionsVar: fk.optionsVar,
+				LabelField: labelF,
+			})
+		} else if isEnumType(f.Type) {
+			filterFields = append(filterFields, pageFilterField{
+				FieldName:  f.Name,
+				Label:      fieldLabel(f),
+				IsEnum:     true,
+				EnumValues: f.Values,
+			})
+		} else if lower == "boolean" || lower == "bool" {
+			filterFields = append(filterFields, pageFilterField{
+				FieldName: f.Name,
+				Label:     fieldLabel(f),
+				IsBool:    true,
+			})
+		}
+	}
+	hasFilters := hasSearch || len(filterFields) > 0
+
 	data := reactPageData{
 		StructName:     structName,
 		Singular:       singular,
@@ -470,6 +523,9 @@ func GenerateReactPage(m Model, allModels []Model) string {
 		FormInputs:     formInputs,
 		TableColumns:   columns,
 		TableCells:     cells,
+		HasSearch:      hasSearch,
+		HasFilters:     hasFilters,
+		FilterFields:   filterFields,
 	}
 
 	return execTmpl("react_page_tsx", reactPageTmpl, data)

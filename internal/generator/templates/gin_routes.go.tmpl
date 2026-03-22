@@ -3,7 +3,8 @@ package {{.PkgName}}
 import (
 	"net/http"
 	"strconv"
-
+{{if .HasSearch}}	"strings"
+{{end}}
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	{{printf "%q" .ModelsImport}}
@@ -38,10 +39,27 @@ func list{{.Singular}}(db *gorm.DB) gin.HandlerFunc {
 		if sortDir != "asc" && sortDir != "desc" {
 			sortDir = "desc"
 		}
-		var total int64
-		db.Model(&{{.Type}}{}).Count(&total)
+		query := db.Model(&{{.Type}}{})
+{{if .SearchColumns}}		if q := c.Query("q"); q != "" {
+			like := "%" + strings.ReplaceAll(q, "%", "\\%") + "%"
+			query = query.Where("{{range $i, $col := .SearchColumns}}{{if $i}} OR {{end}}{{$col}} ILIKE ?{{end}}", {{range $i, $col := .SearchColumns}}{{if $i}}, {{end}}like{{end}})
+		}
+{{end}}{{range .FilterColumns}}		if v := c.Query("{{.DBName}}"); v != "" {
+{{if .IsNumeric}}			if n, err := strconv.Atoi(v); err == nil {
+				query = query.Where("{{.DBName}} = ?", n)
+			}
+{{else if .IsBool}}			switch v {
+			case "true", "1":
+				query = query.Where("{{.DBName}} = ?", true)
+			case "false", "0":
+				query = query.Where("{{.DBName}} = ?", false)
+			}
+{{else}}			query = query.Where("{{.DBName}} = ?", v)
+{{end}}		}
+{{end}}		var total int64
+		query.Count(&total)
 		var rows []{{.Type}}
-		if err := db.Order(sortBy + " " + sortDir).Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		if err := query.Order(sortBy + " " + sortDir).Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

@@ -18,7 +18,9 @@ export default function {{.ComponentName}}() {
   const limit = 20;
   const [sortBy, setSortBy] = useState('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-{{range .FKImports}}  const [{{.OptionsVar}}, {{.SetterVar}}] = useState<{{.RefStruct}}[]>([]);
+{{if .HasFilters}}  const [q, setQ] = useState('');
+  const [filters, setFilters] = useState<Record<string, string>>({});
+{{end}}{{range .FKImports}}  const [{{.OptionsVar}}, {{.SetterVar}}] = useState<{{.RefStruct}}[]>([]);
 {{end}}
 {{if .HasFKs}}  useEffect(() => { load(1); loadRefs(); }, []);
 {{else}}  useEffect(() => { load(1); }, []);
@@ -29,10 +31,13 @@ export default function {{.ComponentName}}() {
 {{end}}    } catch (e) { console.error(e); }
   }
 
-{{end}}  async function load(p: number, sb = sortBy, sd = sortDir) {
+{{end}}  async function load(p: number, sb = sortBy, sd = sortDir{{if .HasFilters}}, f = filters, search = q{{end}}) {
     try {
-      const res = await list{{.PluralName}}(p, limit, sb, sd);
-      setItems(res.data);
+{{if .HasFilters}}      const params: Record<string, string> = { ...f };
+      if (search) params['q'] = search;
+      const res = await list{{.PluralName}}(p, limit, sb, sd, params);
+{{else}}      const res = await list{{.PluralName}}(p, limit, sb, sd);
+{{end}}      setItems(res.data);
       setTotal(res.total);
       setPage(p);
     } catch (e) { console.error(e); }
@@ -44,7 +49,20 @@ export default function {{.ComponentName}}() {
     setSortDir(newDir);
     load(1, col, newDir);
   }
-
+{{if .HasFilters}}
+  function handleFilterChange(key: string, value: string) {
+    const newFilters = value
+      ? { ...filters, [key]: value }
+      : Object.fromEntries(Object.entries(filters).filter(([k]) => k !== key));
+    setFilters(newFilters);
+    load(1, sortBy, sortDir, newFilters, q);
+  }
+{{if .HasSearch}}
+  function handleSearch(newQ: string) {
+    setQ(newQ);
+    load(1, sortBy, sortDir, filters, newQ);
+  }
+{{end}}{{end}}
   function openCreate() {
     setEditing(null); setForm(EMPTY_FORM); setShowForm(true);
   }
@@ -83,7 +101,24 @@ export default function {{.ComponentName}}() {
         <h1>{{.ModelName}}</h1>
         <button className="btn btn-primary" onClick={openCreate}>+ New</button>
       </div>
-
+{{if .HasFilters}}
+      <div className="filter-bar">
+{{if .HasSearch}}        <input className="form-input" type="search" placeholder="Search..." value={q} onChange={e => handleSearch(e.target.value)} />
+{{end}}{{range .FilterFields}}{{if .IsEnum}}        <select className="form-select" value={filters['{{.FieldName}}'] ?? ''} onChange={e => handleFilterChange('{{.FieldName}}', e.target.value)}>
+          <option value="">All {{.Label}}</option>
+          {{range .EnumValues}}<option value="{{.}}">{{.}}</option>
+          {{end}}</select>
+{{else if .IsFK}}        <select className="form-select" value={filters['{{.FieldName}}'] ?? ''} onChange={e => handleFilterChange('{{.FieldName}}', e.target.value)}>
+          <option value="">All {{.Label}}</option>
+          { {{.OptionsVar}}.map(opt => (<option key={opt.id} value={String(opt.id)}>{opt.{{.LabelField}}}</option>))}
+        </select>
+{{else if .IsBool}}        <select className="form-select" value={filters['{{.FieldName}}'] ?? ''} onChange={e => handleFilterChange('{{.FieldName}}', e.target.value)}>
+          <option value="">All {{.Label}}</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+{{end}}{{end}}      </div>
+{{end}}
       {showForm && (
         <div className="form-card">
           <form onSubmit={handleSubmit}>
