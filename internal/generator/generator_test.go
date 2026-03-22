@@ -904,8 +904,9 @@ func TestGenerateGinRoutes_Pagination(t *testing.T) {
 	for _, want := range []string{
 		`c.DefaultQuery("page", "1")`,
 		`c.DefaultQuery("limit", "20")`,
-		`db.Order(sortBy + " " + sortDir).Offset(offset).Limit(limit).Find(&rows)`,
-		`db.Model(&models.Item{}).Count(&total)`,
+		`query := db.Model(&models.Item{})`,
+		`query.Count(&total)`,
+		`query.Order(sortBy + " " + sortDir).Offset(offset).Limit(limit).Find(&rows)`,
 		`"data": rows`,
 		`"total": total`,
 		`"page": page`,
@@ -926,7 +927,8 @@ func TestGenerateReactAPI_Pagination(t *testing.T) {
 		"total: number;",
 		"page = 1, limit = 20",
 		"Promise<PaginatedStudents>",
-		"?page=${page}&limit=${limit}",
+		"new URLSearchParams",
+		"filters: Record<string, string>",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing pagination in API: %s", want)
@@ -1309,6 +1311,230 @@ func TestGenerateReactTypes_EnumFieldIsString(t *testing.T) {
 
 	if !strings.Contains(out, "status?: string") {
 		t.Errorf("expected 'status?: string' for optional enum field in TypeScript interface, got:\n%s", out)
+	}
+}
+
+// ── Filtering / Search tests ─────────────────────────────────────────────────
+
+func TestGenerateGinRoutes_Search_VarcharField(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "posts", Fields: []Field{{Name: "title", Type: "varchar(200)", Required: true}}},
+	}, "routes", "app/models")
+
+	for _, want := range []string{
+		`"strings"`,
+		`c.Query("q")`,
+		`strings.ReplaceAll(q, "%", "\\%")`,
+		`title ILIKE ?`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing search code: %s", want)
+		}
+	}
+}
+
+func TestGenerateGinRoutes_Search_MultipleTextFields(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "posts", Fields: []Field{
+			{Name: "title", Type: "varchar(200)", Required: true},
+			{Name: "body", Type: "text"},
+		}},
+	}, "routes", "app/models")
+
+	if !strings.Contains(out, "title ILIKE ? OR body ILIKE ?") {
+		t.Error("expected OR-joined ILIKE for multiple text fields")
+	}
+}
+
+func TestGenerateGinRoutes_NoSearch_NoStringsImport(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "scores", Fields: []Field{
+			{Name: "value", Type: "int", Required: true},
+			{Name: "passed", Type: "boolean"},
+		}},
+	}, "routes", "app/models")
+
+	if strings.Contains(out, `"strings"`) {
+		t.Error("should not import 'strings' when no searchable fields exist")
+	}
+	if strings.Contains(out, `c.Query("q")`) {
+		t.Error("should not generate q search when no searchable fields exist")
+	}
+}
+
+func TestGenerateGinRoutes_Filter_StringField(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "posts", Fields: []Field{
+			{Name: "status", Type: "enum", Values: []string{"draft", "published"}},
+		}},
+	}, "routes", "app/models")
+
+	for _, want := range []string{
+		`c.Query("status")`,
+		`query = query.Where("status = ?", v)`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing string filter code: %s", want)
+		}
+	}
+}
+
+func TestGenerateGinRoutes_Filter_NumericField(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "posts", Fields: []Field{
+			{Name: "author_id", Type: "int", References: "users.id"},
+		}},
+		{Name: "users", Fields: []Field{{Name: "name", Type: "text"}}},
+	}, "routes", "app/models")
+
+	for _, want := range []string{
+		`c.Query("author_id")`,
+		`strconv.Atoi(v)`,
+		`query = query.Where("author_id = ?", n)`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing numeric filter code: %s", want)
+		}
+	}
+}
+
+func TestGenerateGinRoutes_Filter_BoolField(t *testing.T) {
+	out := GenerateGinRoutes([]Model{
+		{Name: "items", Fields: []Field{
+			{Name: "active", Type: "boolean"},
+		}},
+	}, "routes", "app/models")
+
+	for _, want := range []string{
+		`c.Query("active")`,
+		`case "true", "1":`,
+		`case "false", "0":`,
+		`query = query.Where("active = ?", true)`,
+		`query = query.Where("active = ?", false)`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing bool filter code: %s", want)
+		}
+	}
+}
+
+func TestGenerateReactPage_SearchInput(t *testing.T) {
+	m := Model{
+		Name: "posts",
+		Fields: []Field{
+			{Name: "title", Type: "varchar(200)", Required: true},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	for _, want := range []string{
+		`useState('')`,
+		`handleSearch`,
+		`type="search"`,
+		`placeholder="Search..."`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing search UI code: %s", want)
+		}
+	}
+}
+
+func TestGenerateReactPage_FilterDropdown_Enum(t *testing.T) {
+	m := Model{
+		Name: "posts",
+		Fields: []Field{
+			{Name: "title", Type: "varchar(200)", Required: true},
+			{Name: "status", Type: "enum", Values: []string{"draft", "published", "archived"}},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	for _, want := range []string{
+		`handleFilterChange`,
+		`filters['status']`,
+		`All status`,
+		`value="draft"`,
+		`value="published"`,
+		`value="archived"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing enum filter UI code: %s", want)
+		}
+	}
+}
+
+func TestGenerateReactPage_FilterDropdown_FK(t *testing.T) {
+	allModels := []Model{
+		{Name: "users", Fields: []Field{{Name: "name", Type: "varchar(100)", Required: true}}},
+		{Name: "posts", Fields: []Field{
+			{Name: "title", Type: "varchar(200)", Required: true},
+			{Name: "author_id", Type: "int", References: "users.id"},
+		}},
+	}
+	out := GenerateReactPage(allModels[1], allModels)
+
+	for _, want := range []string{
+		`handleFilterChange`,
+		`filters['author_id']`,
+		`All author_id`,
+		`userOptions`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing FK filter UI code: %s", want)
+		}
+	}
+}
+
+func TestGenerateReactPage_FilterDropdown_Bool(t *testing.T) {
+	m := Model{
+		Name: "items",
+		Fields: []Field{
+			{Name: "active", Type: "boolean"},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	for _, want := range []string{
+		`handleFilterChange`,
+		`filters['active']`,
+		`All active`,
+		`value="true"`,
+		`value="false"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing bool filter UI code: %s", want)
+		}
+	}
+}
+
+func TestGenerateReactPage_NoFilters_NoFilterBar(t *testing.T) {
+	m := Model{
+		Name: "counters",
+		Fields: []Field{
+			{Name: "value", Type: "int", Required: true},
+		},
+	}
+	out := GenerateReactPage(m, nil)
+
+	if strings.Contains(out, "filter-bar") {
+		t.Error("should not render filter-bar when model has no searchable/filterable fields")
+	}
+	if strings.Contains(out, "handleFilterChange") {
+		t.Error("should not generate handleFilterChange when no filter fields")
+	}
+}
+
+func TestGenerateReactAPI_FiltersParam(t *testing.T) {
+	out := GenerateReactAPI(clientTestModel)
+
+	for _, want := range []string{
+		"filters: Record<string, string> = {}",
+		"new URLSearchParams",
+		"...filters",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing filters in API: %s", want)
+		}
 	}
 }
 

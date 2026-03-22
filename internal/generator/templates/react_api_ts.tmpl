@@ -4,8 +4,9 @@ const BASE = '/{{.PluralRaw}}';
 
 export interface Paginated{{.PluralName}} { data: {{.StructName}}[]; total: number; page: number; limit: number; }
 
-export async function list{{.PluralName}}(page = 1, limit = 20, sortBy = 'id', sortDir: 'asc' | 'desc' = 'desc'): Promise<Paginated{{.PluralName}}> {
-  const res = await fetch(`${BASE}?page=${page}&limit=${limit}&sort_by=${sortBy}&sort_dir=${sortDir}`);
+export async function list{{.PluralName}}(page = 1, limit = 20, sortBy = 'id', sortDir: 'asc' | 'desc' = 'desc', filters: Record<string, string> = {}): Promise<Paginated{{.PluralName}}> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit), sort_by: sortBy, sort_dir: sortDir, ...filters });
+  const res = await fetch(`${BASE}?${params}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

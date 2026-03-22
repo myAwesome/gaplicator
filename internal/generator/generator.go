@@ -588,13 +588,22 @@ func GenerateShutdownScript() (string, error) {
 	return buf.String(), nil
 }
 
+type ginFilterColumn struct {
+	DBName    string
+	IsNumeric bool
+	IsBool    bool
+}
+
 type ginModelData struct {
-	Name        string
-	Singular    string
-	Type        string
-	Base        string
-	BaseID      string
-	SortColumns []string
+	Name          string
+	Singular      string
+	Type          string
+	Base          string
+	BaseID        string
+	SortColumns   []string
+	SearchColumns []string
+	FilterColumns []ginFilterColumn
+	HasSearch     bool
 }
 
 func GenerateGinRoutes(models []Model, pkgName string, modelsImport string) string {
@@ -603,28 +612,49 @@ func GenerateGinRoutes(models []Model, pkgName string, modelsImport string) stri
 		modPkg = modelsImport[idx+1:]
 	}
 
+	hasAnySearch := false
 	ginModels := make([]ginModelData, 0, len(models))
 	for _, m := range models {
 		s := toPascalCase(toSingular(m.Name))
 		sortCols := []string{"id", "created_at", "updated_at"}
+		var searchCols []string
+		var filterCols []ginFilterColumn
 		for _, f := range m.Fields {
 			sortCols = append(sortCols, f.Name)
+			lower := strings.ToLower(f.Type)
+			isText := strings.HasPrefix(lower, "text") || strings.HasPrefix(lower, "varchar") || strings.HasPrefix(lower, "char")
+			if isText {
+				searchCols = append(searchCols, f.Name)
+			}
+			isNum := lower == "int" || lower == "bigint" || lower == "smallint" ||
+				lower == "float" || lower == "double" || strings.HasPrefix(lower, "decimal") ||
+				f.References != ""
+			isBool := lower == "boolean" || lower == "bool"
+			filterCols = append(filterCols, ginFilterColumn{DBName: f.Name, IsNumeric: isNum, IsBool: isBool})
+		}
+		hasSearch := len(searchCols) > 0
+		if hasSearch {
+			hasAnySearch = true
 		}
 		ginModels = append(ginModels, ginModelData{
-			Name:        m.Name,
-			Singular:    s,
-			Type:        modPkg + "." + s,
-			Base:        "/" + m.Name,
-			BaseID:      "/" + m.Name + "/:id",
-			SortColumns: sortCols,
+			Name:          m.Name,
+			Singular:      s,
+			Type:          modPkg + "." + s,
+			Base:          "/" + m.Name,
+			BaseID:        "/" + m.Name + "/:id",
+			SortColumns:   sortCols,
+			SearchColumns: searchCols,
+			FilterColumns: filterCols,
+			HasSearch:     hasSearch,
 		})
 	}
 
 	data := struct {
 		PkgName      string
 		ModelsImport string
+		HasSearch    bool
 		Models       []ginModelData
-	}{PkgName: pkgName, ModelsImport: modelsImport, Models: ginModels}
+	}{PkgName: pkgName, ModelsImport: modelsImport, HasSearch: hasAnySearch, Models: ginModels}
 
 	var buf strings.Builder
 	template.Must(template.New("gin_routes").Parse(ginRoutesTmpl)).Execute(&buf, data) //nolint:errcheck
