@@ -618,9 +618,11 @@ func GenerateMain(cfg *Config, appImport string) (string, error) {
 func GenerateDockerCompose(cfg *Config) (string, error) {
 	data := struct {
 		Port   int
+		DBPort int
 		DBName string
 	}{
 		Port:   cfg.App.Port,
+		DBPort: cfg.Database.Port,
 		DBName: cfg.Database.Name,
 	}
 	var buf strings.Builder
