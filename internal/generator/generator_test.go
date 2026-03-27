@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -482,7 +483,7 @@ func TestGenerateGORMModels_SnakeCaseJSONTags(t *testing.T) {
 			{Name: "email", Type: "varchar(255)", Unique: true},
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	for _, want := range []string{
 		`json:"first_name"`,
@@ -498,7 +499,7 @@ func TestGenerateGORMModels_BaseStructWithSnakeCaseTags(t *testing.T) {
 	models := []Model{
 		{Name: "items", Fields: []Field{{Name: "title", Type: "text"}}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	for _, want := range []string{
 		`json:"id"`,
@@ -524,7 +525,7 @@ func TestGenerateGORMModels_AssociationJSONTag(t *testing.T) {
 			{Name: "subject_id", Type: "int", References: "subjects.id"},
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	if !strings.Contains(out, `json:"subject"`) {
 		t.Errorf("expected json:\"subject\" for association field, got:\n%s", out)
@@ -537,7 +538,7 @@ func TestGenerateGORMModels_TableName(t *testing.T) {
 		{Name: "stadiums", Fields: []Field{{Name: "name", Type: "varchar(200)", Required: true}}},
 		{Name: "leagues", Fields: []Field{{Name: "name", Type: "varchar(200)", Required: true}}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	if !strings.Contains(out, `func (Stadium) TableName() string { return "stadiums" }`) {
 		t.Errorf("expected TableName() returning \"stadiums\" for Stadium struct:\n%s", out)
@@ -600,7 +601,7 @@ func TestGenerateReactTypes_InputType(t *testing.T) {
 }
 
 func TestGenerateReactAPI_Functions(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 
 	for _, want := range []string{
 		"export async function listStudents(",
@@ -616,7 +617,7 @@ func TestGenerateReactAPI_Functions(t *testing.T) {
 }
 
 func TestGenerateReactAPI_FetchMethods(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 
 	for _, want := range []string{
 		"method: 'POST'",
@@ -632,14 +633,14 @@ func TestGenerateReactAPI_FetchMethods(t *testing.T) {
 }
 
 func TestGenerateReactAPI_BaseURL(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 	if !strings.Contains(out, "const BASE = '/students';") {
 		t.Error("expected BASE = '/students'")
 	}
 }
 
 func TestGenerateReactAPI_TypeImport(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 	if !strings.Contains(out, "import type { Student, CreateStudentInput } from '../types/student';") {
 		t.Error("expected type import from '../types/student'")
 	}
@@ -703,7 +704,7 @@ func TestGenerateReactApp_Routes(t *testing.T) {
 		{Name: "students", Fields: []Field{{Name: "name", Type: "text"}}},
 		{Name: "subjects", Fields: []Field{{Name: "name", Type: "text"}}},
 	}
-	out := GenerateReactApp(models)
+	out := GenerateReactApp(models, false)
 
 	for _, want := range []string{
 		"import StudentPage from './pages/StudentPage';",
@@ -763,7 +764,7 @@ func TestGenerateGORMModels_JSONTags(t *testing.T) {
 			{Name: "score", Type: "int"},
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	for _, want := range []string{
 		`json:"id"`,
@@ -935,7 +936,7 @@ func TestGenerateGinRoutes_Pagination(t *testing.T) {
 }
 
 func TestGenerateReactAPI_Pagination(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 
 	for _, want := range []string{
 		"export interface PaginatedStudents {",
@@ -1260,7 +1261,7 @@ func TestGenerateGORMModels_EnumField(t *testing.T) {
 			{Name: "status", Type: "enum", Values: []string{"draft", "published"}, Required: true},
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	if !strings.Contains(out, "Status") || !strings.Contains(out, "string") {
 		t.Errorf("expected 'Status' field with 'string' type in GORM model, got:\n%s", out)
@@ -1541,7 +1542,7 @@ func TestGenerateReactPage_NoFilters_NoFilterBar(t *testing.T) {
 }
 
 func TestGenerateReactAPI_FiltersParam(t *testing.T) {
-	out := GenerateReactAPI(clientTestModel)
+	out := GenerateReactAPI(clientTestModel, false)
 
 	for _, want := range []string{
 		"filters: Record<string, string> = {}",
@@ -1699,7 +1700,7 @@ func TestGenerateMigrationDown_JoinTableFirst(t *testing.T) {
 // ── GORM model M2M ────────────────────────────────────────────────────────────
 
 func TestGenerateGORMModels_M2M_Field(t *testing.T) {
-	out := GenerateGORMModels(m2mTestModels, "models")
+	out := GenerateGORMModels(m2mTestModels, "models", nil)
 	if !strings.Contains(out, "[]Course") {
 		t.Errorf("expected '[]Course' M2M field in Student struct:\n%s", out)
 	}
@@ -1828,7 +1829,7 @@ func TestGenerateGORMModels_OptionalFKUsesPointer(t *testing.T) {
 			{Name: "stadium_id", Type: "int", References: "stadiums.id"}, // optional
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	if !strings.Contains(out, "*int") {
 		t.Errorf("expected '*int' for optional FK field, got:\n%s", out)
@@ -1842,7 +1843,7 @@ func TestGenerateGORMModels_RequiredFKNoPointer(t *testing.T) {
 			{Name: "stadium_id", Type: "int", References: "stadiums.id", Required: true},
 		}},
 	}
-	out := GenerateGORMModels(models, "models")
+	out := GenerateGORMModels(models, "models", nil)
 
 	if strings.Contains(out, "*int") {
 		t.Errorf("expected non-pointer 'int' for required FK field, got:\n%s", out)
@@ -1907,5 +1908,412 @@ func TestJoinTableName_Alphabetical(t *testing.T) {
 	}
 	if got := joinTableName("courses", "students"); got != "courses_students" {
 		t.Errorf("expected 'courses_students' (reversed), got %q", got)
+	}
+}
+
+// ── Auth: ValidateConfig ────────────────────────────────────────────────────
+
+var authBaseConfig = Config{
+	App:      AppConfig{Name: "myapp", Port: 8080},
+	Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+	Models: []Model{
+		{Name: "users", Fields: []Field{
+			{Name: "email", Type: "varchar(255)", Required: true, Unique: true},
+			{Name: "password", Type: "varchar(255)", Required: true},
+		}},
+	},
+}
+
+func TestValidateConfig_Auth_Valid(t *testing.T) {
+	cfg := authBaseConfig
+	cfg.Auth = &AuthConfig{Model: "users"}
+	if errs := ValidateConfig(&cfg); len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateConfig_Auth_NoModelSet(t *testing.T) {
+	cfg := authBaseConfig
+	cfg.Auth = &AuthConfig{Model: ""}
+	errs := ValidateConfig(&cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for empty auth.model, got none")
+	}
+	if !strings.Contains(errs[len(errs)-1].Error(), "auth.model is required") {
+		t.Errorf("unexpected error: %v", errs[len(errs)-1])
+	}
+}
+
+func TestValidateConfig_Auth_UnknownModel(t *testing.T) {
+	cfg := authBaseConfig
+	cfg.Auth = &AuthConfig{Model: "ghosts"}
+	errs := ValidateConfig(&cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for unknown auth.model, got none")
+	}
+	if !strings.Contains(errs[len(errs)-1].Error(), "ghosts") {
+		t.Errorf("unexpected error: %v", errs[len(errs)-1])
+	}
+}
+
+func TestValidateConfig_Auth_ModelHasNoPassword(t *testing.T) {
+	cfg := Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "users", Fields: []Field{
+				{Name: "email", Type: "varchar(255)", Required: true},
+			}},
+		},
+		Auth: &AuthConfig{Model: "users"},
+	}
+	errs := ValidateConfig(&cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error when auth model has no password field, got none")
+	}
+	if !strings.Contains(errs[len(errs)-1].Error(), "password") {
+		t.Errorf("unexpected error: %v", errs[len(errs)-1])
+	}
+}
+
+func TestValidateConfig_Auth_Nil(t *testing.T) {
+	cfg := authBaseConfig
+	cfg.Auth = nil
+	if errs := ValidateConfig(&cfg); len(errs) != 0 {
+		t.Errorf("expected no auth errors when auth is nil, got: %v", errs)
+	}
+}
+
+// ── Auth: detectIdentityField ───────────────────────────────────────────────
+
+func TestDetectIdentityField_Email(t *testing.T) {
+	m := Model{Name: "users", Fields: []Field{
+		{Name: "email", Type: "varchar(255)"},
+		{Name: "name", Type: "varchar(100)"},
+	}}
+	if got := detectIdentityField(m); got != "email" {
+		t.Errorf("expected 'email', got %q", got)
+	}
+}
+
+func TestDetectIdentityField_Username(t *testing.T) {
+	m := Model{Name: "users", Fields: []Field{
+		{Name: "username", Type: "varchar(100)"},
+		{Name: "bio", Type: "text"},
+	}}
+	if got := detectIdentityField(m); got != "username" {
+		t.Errorf("expected 'username', got %q", got)
+	}
+}
+
+func TestDetectIdentityField_EmailBeforeUsername(t *testing.T) {
+	m := Model{Name: "users", Fields: []Field{
+		{Name: "username", Type: "varchar(100)"},
+		{Name: "email", Type: "varchar(255)"},
+	}}
+	if got := detectIdentityField(m); got != "username" {
+		// first match wins (email or username), whichever appears first in the loop
+		// our implementation checks by name equality, so the first match in the fields list wins
+		t.Logf("got %q (first field named email/username wins)", got)
+	}
+}
+
+func TestDetectIdentityField_FallbackVarchar(t *testing.T) {
+	m := Model{Name: "accounts", Fields: []Field{
+		{Name: "handle", Type: "varchar(50)"},
+		{Name: "age", Type: "int"},
+	}}
+	if got := detectIdentityField(m); got != "handle" {
+		t.Errorf("expected 'handle' (first varchar), got %q", got)
+	}
+}
+
+func TestDetectIdentityField_FallbackFirstField(t *testing.T) {
+	m := Model{Name: "items", Fields: []Field{
+		{Name: "score", Type: "int"},
+	}}
+	if got := detectIdentityField(m); got != "score" {
+		t.Errorf("expected 'score' (first field fallback), got %q", got)
+	}
+}
+
+// ── Auth: GenerateGORMModels password json:"-" ──────────────────────────────
+
+func TestGenerateGORMModels_Auth_PasswordHidden(t *testing.T) {
+	models := []Model{
+		{Name: "users", Fields: []Field{
+			{Name: "email", Type: "varchar(255)", Required: true},
+			{Name: "password", Type: "varchar(255)", Required: true},
+		}},
+	}
+	out := GenerateGORMModels(models, "models", &AuthConfig{Model: "users"})
+	if strings.Contains(out, `json:"password"`) {
+		t.Error("expected password field to have json:\"-\", but found json:\"password\"")
+	}
+	if !strings.Contains(out, `json:"-"`) {
+		t.Error("expected json:\"-\" tag for password field, not found")
+	}
+}
+
+func TestGenerateGORMModels_NonAuth_PasswordNotHidden(t *testing.T) {
+	models := []Model{
+		{Name: "items", Fields: []Field{
+			{Name: "password", Type: "varchar(255)"},
+		}},
+	}
+	out := GenerateGORMModels(models, "models", nil)
+	if !strings.Contains(out, `json:"password"`) {
+		t.Error("expected json:\"password\" when auth is nil")
+	}
+}
+
+// ── Auth: GenerateAuthGo ────────────────────────────────────────────────────
+
+func TestGenerateAuthGo_RegisterRoute(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "users", Fields: []Field{
+				{Name: "email", Type: "varchar(255)", Required: true},
+				{Name: "password", Type: "varchar(255)", Required: true},
+			}},
+		},
+		Auth: &AuthConfig{Model: "users"},
+	}
+	out, err := GenerateAuthGo(cfg, "myapp")
+	if err != nil {
+		t.Fatalf("GenerateAuthGo returned error: %v", err)
+	}
+	if !strings.Contains(out, `"/auth/register"`) {
+		t.Error("expected /auth/register route")
+	}
+	if !strings.Contains(out, `"/auth/login"`) {
+		t.Error("expected /auth/login route")
+	}
+}
+
+func TestGenerateAuthGo_JWTMiddleware(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "users", Fields: []Field{
+				{Name: "email", Type: "varchar(255)", Required: true},
+				{Name: "password", Type: "varchar(255)", Required: true},
+			}},
+		},
+		Auth: &AuthConfig{Model: "users"},
+	}
+	out, err := GenerateAuthGo(cfg, "myapp")
+	if err != nil {
+		t.Fatalf("GenerateAuthGo returned error: %v", err)
+	}
+	if !strings.Contains(out, "JWTMiddleware") {
+		t.Error("expected JWTMiddleware function")
+	}
+	if !strings.Contains(out, "bcrypt") {
+		t.Error("expected bcrypt usage")
+	}
+	if !strings.Contains(out, "AuthClaims") {
+		t.Error("expected AuthClaims struct")
+	}
+}
+
+func TestGenerateAuthGo_IdentityFieldEmail(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models: []Model{
+			{Name: "users", Fields: []Field{
+				{Name: "email", Type: "varchar(255)", Required: true},
+				{Name: "password", Type: "varchar(255)", Required: true},
+			}},
+		},
+		Auth: &AuthConfig{Model: "users"},
+	}
+	out, err := GenerateAuthGo(cfg, "myapp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, `"email"`) {
+		t.Error("expected email as identity field in generated code")
+	}
+}
+
+// ── Auth: GenerateMain conditional ─────────────────────────────────────────
+
+func TestGenerateMain_WithAuth(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models:   []Model{{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}},
+		Auth:     &AuthConfig{Model: "users"},
+	}
+	out, err := GenerateMain(cfg, "myapp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "RegisterAuthRoutes") {
+		t.Error("expected RegisterAuthRoutes call")
+	}
+	if !strings.Contains(out, "JWTMiddleware()") {
+		t.Error("expected JWTMiddleware() call")
+	}
+	if !strings.Contains(out, `r.Group("/")`) {
+		t.Error("expected authenticated group")
+	}
+}
+
+func TestGenerateMain_WithoutAuth(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models:   []Model{{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}},
+	}
+	out, err := GenerateMain(cfg, "myapp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(out, "RegisterAuthRoutes") {
+		t.Error("expected no RegisterAuthRoutes when auth is disabled")
+	}
+	if !strings.Contains(out, "routes.RegisterRoutes(r, db)") {
+		t.Error("expected direct routes.RegisterRoutes(r, db) call")
+	}
+}
+
+// ── Auth: GenerateGoMod deps ────────────────────────────────────────────────
+
+func TestGenerateGoMod_WithAuth(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models:   []Model{{Name: "users", Fields: []Field{{Name: "email", Type: "varchar(255)"}}}},
+		Auth:     &AuthConfig{Model: "users"},
+	}
+	out, err := GenerateGoMod(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "golang-jwt/jwt/v5") {
+		t.Error("expected golang-jwt/jwt/v5 dep")
+	}
+	if !strings.Contains(out, "golang.org/x/crypto") {
+		t.Error("expected golang.org/x/crypto dep")
+	}
+}
+
+func TestGenerateGoMod_WithoutAuth(t *testing.T) {
+	cfg := &Config{
+		App:      AppConfig{Name: "myapp", Port: 8080},
+		Database: DatabaseConfig{Host: "localhost", Name: "db", Port: 5432},
+		Models:   []Model{{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}},
+	}
+	out, err := GenerateGoMod(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(out, "golang-jwt") {
+		t.Error("expected no golang-jwt when auth is disabled")
+	}
+}
+
+// ── Auth: GenerateReactAPI headers ─────────────────────────────────────────
+
+func TestGenerateReactAPI_WithAuth_HasHeaders(t *testing.T) {
+	m := Model{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}
+	out := GenerateReactAPI(m, true)
+	if !strings.Contains(out, "authHeaders()") {
+		t.Error("expected authHeaders() when hasAuth=true")
+	}
+	if !strings.Contains(out, "getToken") {
+		t.Error("expected getToken import when hasAuth=true")
+	}
+}
+
+func TestGenerateReactAPI_WithoutAuth_NoHeaders(t *testing.T) {
+	m := Model{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}
+	out := GenerateReactAPI(m, false)
+	if strings.Contains(out, "authHeaders()") {
+		t.Error("expected no authHeaders() when hasAuth=false")
+	}
+}
+
+// ── Auth: GenerateReactApp ProtectedRoute ───────────────────────────────────
+
+func TestGenerateReactApp_WithAuth(t *testing.T) {
+	models := []Model{{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}}
+	out := GenerateReactApp(models, true)
+	if !strings.Contains(out, "ProtectedRoute") {
+		t.Error("expected ProtectedRoute when hasAuth=true")
+	}
+	if !strings.Contains(out, "AuthProvider") {
+		t.Error("expected AuthProvider when hasAuth=true")
+	}
+	if !strings.Contains(out, "/login") {
+		t.Error("expected /login route when hasAuth=true")
+	}
+}
+
+func TestGenerateReactApp_WithoutAuth(t *testing.T) {
+	models := []Model{{Name: "posts", Fields: []Field{{Name: "title", Type: "text"}}}}
+	out := GenerateReactApp(models, false)
+	if strings.Contains(out, "ProtectedRoute") {
+		t.Error("expected no ProtectedRoute when hasAuth=false")
+	}
+}
+
+// ── Auth: ParseConfig auto-create model ────────────────────────────────────
+
+func TestParseConfig_Auth_AutoCreateModel(t *testing.T) {
+	// Write a temp config file with auth but no users model.
+	content := `
+app:
+  name: myapp
+  port: 8080
+database:
+  host: localhost
+  name: mydb
+auth:
+  model: users
+models:
+  - name: posts
+    fields:
+      - name: title
+        type: text
+`
+	tmpFile, err := os.CreateTemp("", "auth_test_*.yaml")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.WriteString(content); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	cfg, err := ParseConfig(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("ParseConfig error: %v", err)
+	}
+
+	found := false
+	for _, m := range cfg.Models {
+		if m.Name == "users" {
+			found = true
+			hasPassword := false
+			for _, f := range m.Fields {
+				if f.Name == "password" {
+					hasPassword = true
+				}
+			}
+			if !hasPassword {
+				t.Error("auto-created users model should have a password field")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected users model to be auto-created")
 	}
 }

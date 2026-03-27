@@ -37,6 +37,18 @@ var reactPageTmpl string
 //go:embed templates/react_app_css.tmpl
 var reactAppCSSTmpl string
 
+//go:embed templates/react_auth_context_tsx.tmpl
+var reactAuthContextTmpl string
+
+//go:embed templates/react_auth_api_ts.tmpl
+var reactAuthAPITmpl string
+
+//go:embed templates/react_login_page_tsx.tmpl
+var reactLoginPageTmpl string
+
+//go:embed templates/react_register_page_tsx.tmpl
+var reactRegisterPageTmpl string
+
 // ModelStructName returns the PascalCase singular struct name for a model (e.g. "students" → "Student").
 func ModelStructName(m Model) string {
 	return toPascalCase(toSingular(m.Name))
@@ -163,9 +175,10 @@ func GenerateReactViteConfig(cfg *Config) string {
 		models[i] = proxyModel{m.Name}
 	}
 	return execTmpl("react_vite_config", reactViteConfigTmpl, struct {
-		Port   int
-		Models []proxyModel
-	}{cfg.App.Port, models})
+		Port    int
+		Models  []proxyModel
+		HasAuth bool
+	}{cfg.App.Port, models, cfg.Auth != nil})
 }
 
 // GenerateReactTsConfig returns tsconfig.json for the React client.
@@ -184,7 +197,7 @@ func GenerateReactAppCSS() string {
 }
 
 // GenerateReactApp returns src/App.tsx with navigation and routes for all models.
-func GenerateReactApp(models []Model) string {
+func GenerateReactApp(models []Model, hasAuth bool) string {
 	type appModel struct {
 		Name       string
 		StructName string
@@ -193,7 +206,10 @@ func GenerateReactApp(models []Model) string {
 	for i, m := range models {
 		am[i] = appModel{m.Name, toPascalCase(toSingular(m.Name))}
 	}
-	return execTmpl("react_app_tsx", reactAppTmpl, struct{ Models []appModel }{am})
+	return execTmpl("react_app_tsx", reactAppTmpl, struct {
+		Models  []appModel
+		HasAuth bool
+	}{am, hasAuth})
 }
 
 // GenerateReactTypes returns src/types/{model}.ts with TypeScript interfaces for a model.
@@ -260,18 +276,20 @@ func GenerateReactTypes(m Model, allModels []Model) string {
 }
 
 // GenerateReactAPI returns src/api/{model}.ts with fetch wrappers for a model.
-func GenerateReactAPI(m Model) string {
+func GenerateReactAPI(m Model, hasAuth bool) string {
 	singular := toSingular(m.Name)
 	return execTmpl("react_api_ts", reactAPITmpl, struct {
 		StructName string
 		Singular   string
 		PluralRaw  string
 		PluralName string
+		HasAuth    bool
 	}{
 		StructName: toPascalCase(singular),
 		Singular:   singular,
 		PluralRaw:  m.Name,
 		PluralName: toPascalCase(m.Name),
+		HasAuth:    hasAuth,
 	})
 }
 
@@ -633,4 +651,51 @@ func GenerateReactPage(m Model, allModels []Model) string {
 	}
 
 	return execTmpl("react_page_tsx", reactPageTmpl, data)
+}
+
+type reactAuthData struct {
+	IdentityField     string
+	IdentityLabel     string
+	IdentityInputType string
+}
+
+func buildReactAuthData(cfg *Config) reactAuthData {
+	var authModel Model
+	for _, m := range cfg.Models {
+		if m.Name == cfg.Auth.Model {
+			authModel = m
+			break
+		}
+	}
+	identityField := detectIdentityField(authModel)
+	label := strings.ToUpper(identityField[:1]) + identityField[1:]
+	inputType := "text"
+	if identityField == "email" {
+		inputType = "email"
+	}
+	return reactAuthData{
+		IdentityField:     identityField,
+		IdentityLabel:     label,
+		IdentityInputType: inputType,
+	}
+}
+
+// GenerateReactAuthContext returns src/context/AuthContext.tsx.
+func GenerateReactAuthContext() string {
+	return reactAuthContextTmpl
+}
+
+// GenerateReactAuthAPI returns src/api/auth.ts with login/register functions.
+func GenerateReactAuthAPI(cfg *Config) string {
+	return execTmpl("react_auth_api_ts", reactAuthAPITmpl, buildReactAuthData(cfg))
+}
+
+// GenerateReactLoginPage returns src/pages/LoginPage.tsx.
+func GenerateReactLoginPage(cfg *Config) string {
+	return execTmpl("react_login_page_tsx", reactLoginPageTmpl, buildReactAuthData(cfg))
+}
+
+// GenerateReactRegisterPage returns src/pages/RegisterPage.tsx.
+func GenerateReactRegisterPage(cfg *Config) string {
+	return execTmpl("react_register_page_tsx", reactRegisterPageTmpl, buildReactAuthData(cfg))
 }

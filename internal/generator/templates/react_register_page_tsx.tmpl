@@ -1,0 +1,62 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { register } from '../api/auth';
+
+export default function RegisterPage() {
+  const navigate = useNavigate();
+  const [{{.IdentityField}}, set{{.IdentityLabel}}] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await register({ {{.IdentityField}}, password });
+      navigate('/login');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <h1 className="auth-title">Register</h1>
+        {error && <p className="auth-error">{error}</p>}
+        <form onSubmit={handleSubmit} className="auth-form">
+          <div className="form-group">
+            <label className="form-label">{{.IdentityLabel}}</label>
+            <input
+              className="form-input"
+              type="{{.IdentityInputType}}"
+              value={ {{- .IdentityField -}} }
+              onChange={e => set{{.IdentityLabel}}(e.target.value)}
+              required
+              autoComplete="{{.IdentityField}}"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input
+              className="form-input"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+            />
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? 'Registering…' : 'Register'}
+          </button>
+        </form>
+        <p className="auth-footer">Already have an account? <Link to="/login">Login</Link></p>
+      </div>
+    </div>
+  );
+}

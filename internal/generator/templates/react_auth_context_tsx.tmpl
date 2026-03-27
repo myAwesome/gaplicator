@@ -1,0 +1,42 @@
+import { createContext, useContext, useState, type ReactNode } from 'react';
+
+interface AuthContextValue {
+  token: string | null;
+  login: (token: string) => void;
+  logout: () => void;
+  isAuthenticated: boolean;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(
+    () => localStorage.getItem('auth_token')
+  );
+
+  function login(t: string) {
+    localStorage.setItem('auth_token', t);
+    setToken(t);
+  }
+
+  function logout() {
+    localStorage.removeItem('auth_token');
+    setToken(null);
+  }
+
+  return (
+    <AuthContext.Provider value={{ token, login, logout, isAuthenticated: token !== null }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem('auth_token');
+}

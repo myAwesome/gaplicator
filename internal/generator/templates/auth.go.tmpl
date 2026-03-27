@@ -1,0 +1,123 @@
+package main
+
+import (
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+
+	{{.ModelsImport}}
+)
+
+type AuthClaims struct {
+	UserID            uint   `json:"user_id"`
+	{{printf "%-18s" .IdentityGoName}} string `json:"{{.IdentityField}}"`
+	jwt.RegisteredClaims
+}
+
+func getJWTSecret() []byte {
+	s := os.Getenv("JWT_SECRET")
+	if s == "" {
+		s = "change-me-in-production"
+	}
+	return []byte(s)
+}
+
+func RegisterAuthRoutes(r *gin.Engine, db *gorm.DB) {
+	r.POST("/auth/register", registerHandler(db))
+	r.POST("/auth/login", loginHandler(db))
+}
+
+func registerHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var input struct {
+			{{printf "%-18s" .IdentityGoName}} string `json:"{{.IdentityField}}" binding:"required"`
+			Password          string `json:"password"          binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+			return
+		}
+		user := models.{{.AuthStructName}}{
+			{{.IdentityGoName}}: input.{{.IdentityGoName}},
+			{{.PasswordGoName}}: string(hash),
+		}
+		if err := db.Create(&user).Error; err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"id": user.ID})
+	}
+}
+
+func loginHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var input struct {
+			{{printf "%-18s" .IdentityGoName}} string `json:"{{.IdentityField}}" binding:"required"`
+			Password          string `json:"password"          binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		var user models.{{.AuthStructName}}
+		if err := db.Where("{{.IdentityField}} = ?", input.{{.IdentityGoName}}).First(&user).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.{{.PasswordGoName}}), []byte(input.Password)); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			return
+		}
+		claims := AuthClaims{
+			UserID:           user.ID,
+			{{.IdentityGoName}}: user.{{.IdentityGoName}},
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
+			},
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		signed, err := token.SignedString(getJWTSecret())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not sign token"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"token": signed})
+	}
+}
+
+func JWTMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+			return
+		}
+		tokenStr := strings.TrimPrefix(header, "Bearer ")
+		claims := &AuthClaims{}
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return getJWTSecret(), nil
+		})
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+		c.Set("user_id", claims.UserID)
+		c.Set("{{.IdentityField}}", claims.{{.IdentityGoName}})
+		c.Next()
+	}
+}

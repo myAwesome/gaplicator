@@ -1,18 +1,24 @@
 import type { {{.StructName}}, Create{{.StructName}}Input } from '../types/{{.Singular}}';
+{{if .HasAuth}}import { getToken } from '../context/AuthContext';
 
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+{{end}}
 const BASE = '/{{.PluralRaw}}';
 
 export interface Paginated{{.PluralName}} { data: {{.StructName}}[]; total: number; page: number; limit: number; }
 
 export async function list{{.PluralName}}(page = 1, limit = 20, sortBy = 'id', sortDir: 'asc' | 'desc' = 'desc', filters: Record<string, string> = {}): Promise<Paginated{{.PluralName}}> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit), sort_by: sortBy, sort_dir: sortDir, ...filters });
-  const res = await fetch(`${BASE}?${params}`);
+  const res = await fetch(`${BASE}?${params}`, { headers: { {{if .HasAuth}}...authHeaders(){{end}} } });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function get{{.StructName}}(id: number): Promise<{{.StructName}}> {
-  const res = await fetch(`${BASE}/${id}`);
+  const res = await fetch(`${BASE}/${id}`, { headers: { {{if .HasAuth}}...authHeaders(){{end}} } });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -20,7 +26,7 @@ export async function get{{.StructName}}(id: number): Promise<{{.StructName}}> {
 export async function create{{.StructName}}(data: Create{{.StructName}}Input): Promise<{{.StructName}}> {
   const res = await fetch(BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json'{{if .HasAuth}}, ...authHeaders(){{end}} },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -30,7 +36,7 @@ export async function create{{.StructName}}(data: Create{{.StructName}}Input): P
 export async function update{{.StructName}}(id: number, data: Partial<Create{{.StructName}}Input>): Promise<{{.StructName}}> {
   const res = await fetch(`${BASE}/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json'{{if .HasAuth}}, ...authHeaders(){{end}} },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -38,14 +44,14 @@ export async function update{{.StructName}}(id: number, data: Partial<Create{{.S
 }
 
 export async function delete{{.StructName}}(id: number): Promise<void> {
-  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE'{{if .HasAuth}}, headers: authHeaders(){{end}} });
   if (!res.ok) throw new Error(await res.text());
 }
 
 export async function batchDelete{{.StructName}}(ids: number[]): Promise<void> {
   const res = await fetch(`${BASE}/batch`, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json'{{if .HasAuth}}, ...authHeaders(){{end}} },
     body: JSON.stringify({ ids }),
   });
   if (!res.ok) throw new Error(await res.text());

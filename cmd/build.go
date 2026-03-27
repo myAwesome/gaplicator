@@ -52,7 +52,7 @@ var buildCmd = &cobra.Command{
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					return err
 				}
-				return writeFile(filepath.Join(dir, "models.go"), generator.GenerateGORMModels(cfg.Models, "models"))
+				return writeFile(filepath.Join(dir, "models.go"), generator.GenerateGORMModels(cfg.Models, "models", cfg.Auth))
 			}},
 			{"Generating routes", func() error {
 				dir := filepath.Join(out, "routes")
@@ -67,6 +67,16 @@ var buildCmd = &cobra.Command{
 					return err
 				}
 				return writeFile(filepath.Join(out, "main.go"), content)
+			}},
+			{"Generating auth.go", func() error {
+				if cfg.Auth == nil {
+					return nil
+				}
+				content, err := generator.GenerateAuthGo(cfg, cfg.App.Name)
+				if err != nil {
+					return err
+				}
+				return writeFile(filepath.Join(out, "auth.go"), content)
 			}},
 			{"Generating docker-compose.yml", func() error {
 				content, err := generator.GenerateDockerCompose(cfg)
@@ -106,27 +116,44 @@ var buildCmd = &cobra.Command{
 			{"Generating client", func() error {
 				clientDir := filepath.Join(out, "client")
 				srcDir := filepath.Join(clientDir, "src")
-				for _, dir := range []string{
+				dirs := []string{
 					filepath.Join(srcDir, "types"),
 					filepath.Join(srcDir, "api"),
 					filepath.Join(srcDir, "pages"),
-				} {
+				}
+				if cfg.Auth != nil {
+					dirs = append(dirs, filepath.Join(srcDir, "context"))
+				}
+				for _, dir := range dirs {
 					if err := os.MkdirAll(dir, 0755); err != nil {
 						return err
 					}
 				}
 				static := map[string]string{
-					filepath.Join(clientDir, "package.json"):   generator.GenerateReactPackageJSON(cfg),
-					filepath.Join(clientDir, "index.html"):     generator.GenerateReactIndexHTML(cfg),
-					filepath.Join(clientDir, "vite.config.ts"): generator.GenerateReactViteConfig(cfg),
-					filepath.Join(clientDir, "tsconfig.json"):  generator.GenerateReactTsConfig(),
-					filepath.Join(srcDir, "main.tsx"):          generator.GenerateReactMain(),
-					filepath.Join(srcDir, "app.css"):           generator.GenerateReactAppCSS(),
-					filepath.Join(srcDir, "App.tsx"):           generator.GenerateReactApp(cfg.Models),
+					filepath.Join(clientDir, "package.json"):    generator.GenerateReactPackageJSON(cfg),
+					filepath.Join(clientDir, "index.html"):      generator.GenerateReactIndexHTML(cfg),
+					filepath.Join(clientDir, "vite.config.ts"):  generator.GenerateReactViteConfig(cfg),
+					filepath.Join(clientDir, "tsconfig.json"):   generator.GenerateReactTsConfig(),
+					filepath.Join(srcDir, "main.tsx"):            generator.GenerateReactMain(),
+					filepath.Join(srcDir, "app.css"):             generator.GenerateReactAppCSS(),
+					filepath.Join(srcDir, "App.tsx"):             generator.GenerateReactApp(cfg.Models, cfg.Auth != nil),
 				}
 				for path, content := range static {
 					if err := writeFile(path, content); err != nil {
 						return err
+					}
+				}
+				if cfg.Auth != nil {
+					authFiles := map[string]string{
+						filepath.Join(srcDir, "context", "AuthContext.tsx"): generator.GenerateReactAuthContext(),
+						filepath.Join(srcDir, "api", "auth.ts"):             generator.GenerateReactAuthAPI(cfg),
+						filepath.Join(srcDir, "pages", "LoginPage.tsx"):     generator.GenerateReactLoginPage(cfg),
+						filepath.Join(srcDir, "pages", "RegisterPage.tsx"):  generator.GenerateReactRegisterPage(cfg),
+					}
+					for path, content := range authFiles {
+						if err := writeFile(path, content); err != nil {
+							return err
+						}
 					}
 				}
 				for _, m := range cfg.Models {
@@ -135,7 +162,7 @@ var buildCmd = &cobra.Command{
 					if err := writeFile(filepath.Join(srcDir, "types", base+".ts"), generator.GenerateReactTypes(m, cfg.Models)); err != nil {
 						return err
 					}
-					if err := writeFile(filepath.Join(srcDir, "api", base+".ts"), generator.GenerateReactAPI(m)); err != nil {
+					if err := writeFile(filepath.Join(srcDir, "api", base+".ts"), generator.GenerateReactAPI(m, cfg.Auth != nil)); err != nil {
 						return err
 					}
 					if err := writeFile(filepath.Join(srcDir, "pages", structName+"Page.tsx"), generator.GenerateReactPage(m, cfg.Models)); err != nil {

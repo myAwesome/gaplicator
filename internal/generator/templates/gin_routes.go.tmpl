@@ -12,7 +12,7 @@ import (
 )
 
 // RegisterRoutes wires all CRUD routes onto r.
-func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
+func RegisterRoutes(r gin.IRouter, db *gorm.DB) {
 {{range .Models}}	r.GET({{printf "%q" .Base}}, list{{.Singular}}(db))
 	r.GET({{printf "%q" .BaseID}}, get{{.Singular}}(db))
 	r.POST({{printf "%q" .Base}}, create{{.Singular}}(db))
