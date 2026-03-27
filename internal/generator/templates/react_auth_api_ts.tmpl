@@ -1,0 +1,23 @@
+export interface LoginInput { {{.IdentityField}}: string; password: string; }
+export interface RegisterInput { {{.IdentityField}}: string; password: string; }
+export interface AuthResponse { token: string; }
+
+export async function login(data: LoginInput): Promise<AuthResponse> {
+  const res = await fetch('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function register(data: RegisterInput): Promise<{ id: number }> {
+  const res = await fetch('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

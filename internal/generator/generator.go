@@ -35,9 +35,17 @@ var gormModelsTmpl string
 //go:embed templates/gin_routes.go.tmpl
 var ginRoutesTmpl string
 
+//go:embed templates/auth.go.tmpl
+var authGoTmpl string
+
+type AuthConfig struct {
+	Model string `yaml:"model"`
+}
+
 type Config struct {
 	App      AppConfig      `yaml:"app"`
 	Database DatabaseConfig `yaml:"database"`
+	Auth     *AuthConfig    `yaml:"auth,omitempty"`
 	Models   []Model        `yaml:"models"`
 }
 
@@ -103,7 +111,48 @@ func ParseConfig(path string) (*Config, error) {
 		cfg.Database.Password = "secret"
 	}
 
+	// If auth is enabled and the referenced model doesn't exist, create a default one.
+	if cfg.Auth != nil && cfg.Auth.Model != "" {
+		found := false
+		for _, m := range cfg.Models {
+			if m.Name == cfg.Auth.Model {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cfg.Models = append(cfg.Models, Model{
+				Name: cfg.Auth.Model,
+				Fields: []Field{
+					{Name: "email", Type: "varchar(255)", Required: true, Unique: true, Label: "Email"},
+					{Name: "password", Type: "varchar(255)", Required: true, Label: "Password"},
+					{Name: "name", Type: "varchar(100)", Label: "Name"},
+				},
+			})
+		}
+	}
+
 	return &cfg, nil
+}
+
+// detectIdentityField returns the DB column name used to identify a user for login.
+// Priority: first field named "email", then "username", then first varchar/text field.
+func detectIdentityField(m Model) string {
+	for _, f := range m.Fields {
+		if f.Name == "email" || f.Name == "username" {
+			return f.Name
+		}
+	}
+	for _, f := range m.Fields {
+		lower := strings.ToLower(f.Type)
+		if strings.HasPrefix(lower, "varchar") || strings.HasPrefix(lower, "char") || lower == "text" {
+			return f.Name
+		}
+	}
+	if len(m.Fields) > 0 {
+		return m.Fields[0].Name
+	}
+	return "id"
 }
 
 func ValidateConfig(cfg *Config) []error {
@@ -226,6 +275,30 @@ func ValidateConfig(cfg *Config) []error {
 				}
 			} else if f.DisplayField != "" {
 				errs = append(errs, fmt.Errorf("%s: display_field requires references to be set", fprefix))
+			}
+		}
+	}
+
+	if cfg.Auth != nil {
+		if cfg.Auth.Model == "" {
+			errs = append(errs, fmt.Errorf("auth.model is required when auth is set"))
+		} else if modelNameCount[cfg.Auth.Model] == 0 {
+			errs = append(errs, fmt.Errorf("auth.model %q does not reference an existing model", cfg.Auth.Model))
+		} else {
+			hasPassword := false
+			for _, m := range cfg.Models {
+				if m.Name == cfg.Auth.Model {
+					for _, f := range m.Fields {
+						if strings.ToLower(f.Name) == "password" {
+							hasPassword = true
+							break
+						}
+					}
+					break
+				}
+			}
+			if !hasPassword {
+				errs = append(errs, fmt.Errorf("auth.model %q must have a field named 'password'", cfg.Auth.Model))
 			}
 		}
 	}
@@ -477,7 +550,7 @@ func extractSize(sqlType string) string {
 	return ""
 }
 
-func buildFieldTags(f Field) string {
+func buildFieldTags(f Field, hideJSON bool) string {
 	var parts []string
 	parts = append(parts, "column:"+f.Name)
 	if size := extractSize(f.Type); size != "" {
@@ -493,6 +566,9 @@ func buildFieldTags(f Field) string {
 	}
 	if f.Default != nil {
 		parts = append(parts, "default:"+formatDefault(f.Default))
+	}
+	if hideJSON {
+		return `gorm:"` + strings.Join(parts, ";") + `" json:"-"`
 	}
 	return `gorm:"` + strings.Join(parts, ";") + `" json:"` + f.Name + `"`
 }
@@ -519,7 +595,7 @@ type gormModelData struct {
 	M2MFields  []gormM2MField
 }
 
-func GenerateGORMModels(models []Model, pkgName string) string {
+func GenerateGORMModels(models []Model, pkgName string, auth *AuthConfig) string {
 	structNames := make(map[string]string, len(models))
 	for _, m := range models {
 		structNames[m.Name] = toPascalCase(toSingular(m.Name))
@@ -527,6 +603,7 @@ func GenerateGORMModels(models []Model, pkgName string) string {
 
 	modelData := make([]gormModelData, 0, len(models))
 	for _, m := range models {
+		isAuthModel := auth != nil && m.Name == auth.Model
 		structName := structNames[m.Name]
 		fields := make([]gormFieldData, 0, len(m.Fields))
 		for _, f := range m.Fields {
@@ -535,10 +612,11 @@ func GenerateGORMModels(models []Model, pkgName string) string {
 			if f.References != "" && !f.Required {
 				goType = "*" + goType
 			}
+			isPasswordField := isAuthModel && strings.ToLower(f.Name) == "password"
 			fd := gormFieldData{
 				FieldName: fieldName,
 				GoType:    goType,
-				Tags:      buildFieldTags(f),
+				Tags:      buildFieldTags(f, isPasswordField),
 			}
 			if f.References != "" {
 				parts := strings.SplitN(f.References, ".", 2)
@@ -599,6 +677,7 @@ func GenerateMain(cfg *Config, appImport string) (string, error) {
 		DBName       string
 		Port         int
 		Models       []string
+		HasAuth      bool
 	}{
 		ModelsImport: fmt.Sprintf("%q", appImport+"/models"),
 		RoutesImport: fmt.Sprintf("%q", appImport+"/routes"),
@@ -606,6 +685,7 @@ func GenerateMain(cfg *Config, appImport string) (string, error) {
 		DBName:       fmt.Sprintf("%q", cfg.Database.Name),
 		Port:         cfg.App.Port,
 		Models:       models,
+		HasAuth:      cfg.Auth != nil,
 	}
 
 	var buf strings.Builder
@@ -637,7 +717,10 @@ func GenerateDockerCompose(cfg *Config) (string, error) {
 }
 
 func GenerateGoMod(cfg *Config) (string, error) {
-	data := struct{ ModuleName string }{ModuleName: cfg.App.Name}
+	data := struct {
+		ModuleName string
+		HasAuth    bool
+	}{ModuleName: cfg.App.Name, HasAuth: cfg.Auth != nil}
 	var buf strings.Builder
 	if err := template.Must(template.New("go.mod").Parse(goModTmpl)).Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("execute go.mod template: %w", err)
@@ -652,12 +735,14 @@ func GenerateEnv(cfg *Config) (string, error) {
 		DBUser     string
 		DBPassword string
 		DBName     string
+		HasAuth    bool
 	}{
 		DBHost:     cfg.Database.Host,
 		DBPort:     cfg.Database.Port,
 		DBUser:     cfg.Database.User,
 		DBPassword: cfg.Database.Password,
 		DBName:     cfg.Database.Name,
+		HasAuth:    cfg.Auth != nil,
 	}
 	var buf strings.Builder
 	if err := template.Must(template.New(".env").Parse(envTmpl)).Execute(&buf, data); err != nil {
@@ -792,4 +877,38 @@ func GenerateGinRoutes(models []Model, pkgName string, modelsImport string) stri
 	var buf strings.Builder
 	template.Must(template.New("gin_routes").Parse(ginRoutesTmpl)).Execute(&buf, data) //nolint:errcheck
 	return buf.String()
+}
+
+type authTemplateData struct {
+	ModelsImport   string
+	AuthStructName string
+	IdentityField  string
+	IdentityGoName string
+	PasswordGoName string
+}
+
+func GenerateAuthGo(cfg *Config, appImport string) (string, error) {
+	if cfg.Auth == nil {
+		return "", fmt.Errorf("auth config is not set")
+	}
+	var authModel Model
+	for _, m := range cfg.Models {
+		if m.Name == cfg.Auth.Model {
+			authModel = m
+			break
+		}
+	}
+	identityField := detectIdentityField(authModel)
+	data := authTemplateData{
+		ModelsImport:   fmt.Sprintf("%q", appImport+"/models"),
+		AuthStructName: toPascalCase(toSingular(authModel.Name)),
+		IdentityField:  identityField,
+		IdentityGoName: toPascalCase(identityField),
+		PasswordGoName: "Password",
+	}
+	var buf strings.Builder
+	if err := template.Must(template.New("auth.go").Parse(authGoTmpl)).Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("execute auth.go template: %w", err)
+	}
+	return buf.String(), nil
 }
