@@ -87,13 +87,19 @@ export function generateYaml(config) {
   lines.push('')
 
   // ── database ─────────────────────────────────────────────
+  const driver = config.database.driver || 'postgres'
+  const defaultPort = driver === 'mysql' ? 3306 : 5432
+  const defaultUser = driver === 'mysql' ? 'root' : 'postgres'
   lines.push('database:')
+  if (driver !== 'postgres') {
+    lines.push(`  driver: ${yamlStr(driver)}`)
+  }
   lines.push(`  host: ${yamlStr(config.database.host || 'localhost')}`)
-  if (config.database.port && Number(config.database.port) !== 5432) {
+  if (config.database.port && Number(config.database.port) !== defaultPort) {
     lines.push(`  port: ${Number(config.database.port)}`)
   }
   lines.push(`  name: ${yamlStr(config.database.name || 'my_db')}`)
-  if (config.database.user && config.database.user !== 'postgres') {
+  if (config.database.user && config.database.user !== defaultUser) {
     lines.push(`  user: ${yamlStr(config.database.user)}`)
   }
   if (config.database.password && config.database.password !== 'secret') {

@@ -1,8 +1,24 @@
 import { useState } from 'react'
 import { ChevronRight } from './icons.jsx'
 
+const DRIVER_DEFAULTS = {
+  postgres: { port: 5432, user: 'postgres' },
+  mysql:    { port: 3306, user: 'root' },
+}
+
 export default function DatabaseSection({ db, onChange }) {
   const [open, setOpen] = useState(true)
+
+  function handleDriverChange(driver) {
+    const defaults = DRIVER_DEFAULTS[driver]
+    const currentDefaults = DRIVER_DEFAULTS[db.driver] || DRIVER_DEFAULTS.postgres
+    const patch = { driver }
+    if (Number(db.port) === currentDefaults.port) patch.port = defaults.port
+    if (db.user === currentDefaults.user) patch.user = defaults.user
+    onChange(patch)
+  }
+
+  const portPlaceholder = String(DRIVER_DEFAULTS[db.driver]?.port ?? 5432)
 
   return (
     <div className="section-card">
@@ -17,6 +33,17 @@ export default function DatabaseSection({ db, onChange }) {
       </div>
       {open && (
         <div className="section-body">
+          <div className="form-group">
+            <label className="form-label">Driver</label>
+            <select
+              className="form-select"
+              value={db.driver || 'postgres'}
+              onChange={e => handleDriverChange(e.target.value)}
+            >
+              <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+            </select>
+          </div>
           <div className="form-row cols-2">
             <div className="form-group">
               <label className="form-label">Host <span className="required">*</span></label>
@@ -36,7 +63,7 @@ export default function DatabaseSection({ db, onChange }) {
                 onChange={e => onChange({ port: e.target.value })}
                 min={1}
                 max={65535}
-                placeholder="5432"
+                placeholder={portPlaceholder}
               />
             </div>
           </div>

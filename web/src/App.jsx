@@ -32,7 +32,7 @@ const DEFAULT_MODEL = () => ({
 
 const INITIAL = {
   app: { name: 'my-app', port: 8080 },
-  database: { host: 'localhost', port: 5432, name: 'my_db', user: 'postgres', password: 'secret' },
+  database: { driver: 'postgres', host: 'localhost', port: 5432, name: 'my_db', user: 'postgres', password: 'secret' },
   auth: { enabled: false, model: '' },
   models: [],
 }
