@@ -153,7 +153,7 @@ html, body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  /*overflow: hidden;*/
 }
 
 .section-header {
