@@ -5,6 +5,7 @@ import DatabaseSection from './components/DatabaseSection.jsx'
 import AuthSection from './components/AuthSection.jsx'
 import ModelsSection from './components/ModelsSection.jsx'
 import YamlPreview from './components/YamlPreview.jsx'
+import ThemeToggle from './components/ThemeToggle.jsx'
 
 let _id = 0
 export function uid() { return ++_id }
@@ -66,6 +67,7 @@ export default function App() {
         </div>
         <div className="app-header-sep" />
         <div className="app-header-sub">Schema Generator</div>
+        <ThemeToggle />
       </header>
 
       <div className="app-body">
