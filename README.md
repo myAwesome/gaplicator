@@ -145,8 +145,8 @@ auth:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/auth/register` | Register — body: `{"email": "...", "password": "..."}` |
-| `POST` | `/auth/login` | Login — returns `{"token": "<jwt>"}` |
+| `POST` | `/api/auth/register` | Register — body: `{"email": "...", "password": "..."}` |
+| `POST` | `/api/auth/login` | Login — returns `{"token": "<jwt>"}` |
 
 The JWT token is valid for 24 hours and must be sent as `Authorization: Bearer <token>` on all model routes. The secret is read from the `JWT_SECRET` environment variable (set in the generated `.env`).
 
@@ -162,12 +162,12 @@ Every model gets the following routes:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/{model}` | List with pagination, filtering, search, and sorting |
-| `GET` | `/{model}/:id` | Get single item |
-| `POST` | `/{model}` | Create item |
-| `PUT` | `/{model}/:id` | Update item |
-| `DELETE` | `/{model}/:id` | Delete single item |
-| `DELETE` | `/{model}/batch` | Batch delete — request body: `{"ids": [1, 2, 3]}` |
+| `GET` | `/api/{model}` | List with pagination, filtering, search, and sorting |
+| `GET` | `/api/{model}/:id` | Get single item |
+| `POST` | `/api/{model}` | Create item |
+| `PUT` | `/api/{model}/:id` | Update item |
+| `DELETE` | `/api/{model}/:id` | Delete single item |
+| `DELETE` | `/api/{model}/batch` | Batch delete — request body: `{"ids": [1, 2, 3]}` |
 
 ### Filtering, search & sorting
 
@@ -182,7 +182,7 @@ Every list endpoint supports filtering, full-text search, sorting, and paginatio
 | `page` | Page number (1-based). Default: `1` |
 | `limit` | Results per page. Default: `20`, max: `100` |
 
-**Example:** `GET /posts?q=hello&status=draft&author_id=5&sort_by=title&sort_dir=desc&page=2&limit=20`
+**Example:** `GET /api/posts?q=hello&status=draft&author_id=5&sort_by=title&sort_dir=desc&page=2&limit=20`
 
 The React frontend generates corresponding UI controls: a search input, filter dropdowns for enum/boolean/FK fields, sortable column headers, pagination, and checkbox-based batch delete.
 

@@ -48,8 +48,8 @@ Configured in `.env`:
 
 | Method | Path              | Description                                      |
 |--------|-------------------|--------------------------------------------------|
-| `POST` | `/auth/register`  | Register — body: `{"{{.IdentityField}}": "...", "password": "..."}` |
-| `POST` | `/auth/login`     | Login — returns `{"token": "<jwt>"}` |
+| `POST` | `/api/auth/register`  | Register — body: `{"{{.IdentityField}}": "...", "password": "..."}` |
+| `POST` | `/api/auth/login`     | Login — returns `{"token": "<jwt>"}` |
 
 All model routes require `Authorization: Bearer <token>`.
 {{end}}
@@ -59,12 +59,12 @@ All model routes require `Authorization: Bearer <token>`.
 
 | Method   | Path                    | Description                                 |
 |----------|-------------------------|---------------------------------------------|
-| `GET`    | `/{{.Name}}`            | List (pagination, search, filter, sort)     |
-| `GET`    | `/{{.Name}}/:id`        | Get by id                                   |
-| `POST`   | `/{{.Name}}`            | Create                                      |
-| `PUT`    | `/{{.Name}}/:id`        | Update                                      |
-| `DELETE` | `/{{.Name}}/:id`        | Delete                                      |
-| `DELETE` | `/{{.Name}}/batch`      | Batch delete — body: `{"ids": [1, 2, 3]}`   |
+| `GET`    | `/api/{{.Name}}`            | List (pagination, search, filter, sort)     |
+| `GET`    | `/api/{{.Name}}/:id`        | Get by id                                   |
+| `POST`   | `/api/{{.Name}}`            | Create                                      |
+| `PUT`    | `/api/{{.Name}}/:id`        | Update                                      |
+| `DELETE` | `/api/{{.Name}}/:id`        | Delete                                      |
+| `DELETE` | `/api/{{.Name}}/batch`      | Batch delete — body: `{"ids": [1, 2, 3]}`   |
 {{end}}
 ### Query parameters (list endpoints)
 
