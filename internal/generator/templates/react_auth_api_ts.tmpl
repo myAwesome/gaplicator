@@ -3,7 +3,7 @@ export interface RegisterInput { {{.IdentityField}}: string; password: string; }
 export interface AuthResponse { token: string; }
 
 export async function login(data: LoginInput): Promise<AuthResponse> {
-  const res = await fetch('/auth/login', {
+  const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -13,7 +13,7 @@ export async function login(data: LoginInput): Promise<AuthResponse> {
 }
 
 export async function register(data: RegisterInput): Promise<{ id: number }> {
-  const res = await fetch('/auth/register', {
+  const res = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),

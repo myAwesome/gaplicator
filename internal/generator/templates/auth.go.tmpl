@@ -29,8 +29,8 @@ func getJWTSecret() []byte {
 }
 
 func RegisterAuthRoutes(r *gin.Engine, db *gorm.DB) {
-	r.POST("/auth/register", registerHandler(db))
-	r.POST("/auth/login", loginHandler(db))
+	r.POST("/api/auth/register", registerHandler(db))
+	r.POST("/api/auth/login", loginHandler(db))
 }
 
 func registerHandler(db *gorm.DB) gin.HandlerFunc {

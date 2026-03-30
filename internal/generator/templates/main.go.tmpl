@@ -54,10 +54,11 @@ func main() {
 
 {{if .HasAuth}}	RegisterAuthRoutes(r, db)
 
-	authenticated := r.Group("/")
+	authenticated := r.Group("/api")
 	authenticated.Use(JWTMiddleware())
 	routes.RegisterRoutes(authenticated, db)
-{{else}}	routes.RegisterRoutes(r, db)
+{{else}}	api := r.Group("/api")
+	routes.RegisterRoutes(api, db)
 {{end}}	if err := r.Run(":" + os.Getenv("APP_PORT")); err != nil {
 		log.Fatalf("server: %v", err)
 	}
