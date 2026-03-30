@@ -6,7 +6,7 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 {{end}}
-const BASE = '/{{.PluralRaw}}';
+const BASE = '/api/{{.PluralRaw}}';
 
 export interface Paginated{{.PluralName}} { data: {{.StructName}}[]; total: number; page: number; limit: number; }
 

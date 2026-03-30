@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-{{range .Models}}      '/{{.Name}}': 'http://localhost:{{$.Port}}',
-{{end}}{{if .HasAuth}}      '/auth': 'http://localhost:{{.Port}}',
+{{range .Models}}      '/api/{{.Name}}': 'http://localhost:{{$.Port}}',
+{{end}}{{if .HasAuth}}      '/api/auth': 'http://localhost:{{.Port}}',
 {{end}}    },
   },
 })

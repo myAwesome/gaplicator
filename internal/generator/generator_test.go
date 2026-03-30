@@ -610,8 +610,8 @@ func TestGenerateReactAPI_FetchMethods(t *testing.T) {
 
 func TestGenerateReactAPI_BaseURL(t *testing.T) {
 	out := GenerateReactAPI(clientTestModel, false)
-	if !strings.Contains(out, "const BASE = '/students';") {
-		t.Error("expected BASE = '/students'")
+	if !strings.Contains(out, "const BASE = '/api/students';") {
+		t.Error("expected BASE = '/api/students'")
 	}
 }
 
@@ -724,8 +724,8 @@ func TestGenerateReactViteConfig_Proxy(t *testing.T) {
 
 	for _, want := range []string{
 		"proxy:",
-		"'/students': 'http://localhost:3000'",
-		"'/subjects': 'http://localhost:3000'",
+		"'/api/students': 'http://localhost:3000'",
+		"'/api/subjects': 'http://localhost:3000'",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in vite.config.ts", want)
@@ -2127,11 +2127,11 @@ func TestGenerateAuthGo_RegisterRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAuthGo returned error: %v", err)
 	}
-	if !strings.Contains(out, `"/auth/register"`) {
-		t.Error("expected /auth/register route")
+	if !strings.Contains(out, `"/api/auth/register"`) {
+		t.Error("expected /api/auth/register route")
 	}
-	if !strings.Contains(out, `"/auth/login"`) {
-		t.Error("expected /auth/login route")
+	if !strings.Contains(out, `"/api/auth/login"`) {
+		t.Error("expected /api/auth/login route")
 	}
 }
 
