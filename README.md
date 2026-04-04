@@ -58,11 +58,46 @@ To stop: `./shutdown.sh`
 
 ```bash
 gaplicator build <config.yaml> [-o <output-dir>]
+gaplicator serve [--host <host>] [--port <port>]
 ```
+
+### `build` flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-o`, `--output` | `dist` | Output directory for generated files |
+
+### `serve` flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host` | `127.0.0.1` | Bridge bind host |
+| `--port` | `8787` | Bridge bind port |
+
+### Web Bridge (schema generator -> CLI)
+
+Run a local bridge so the web app can send generated YAML directly to the CLI:
+
+```bash
+gaplicator serve --host 127.0.0.1 --port 8787
+```
+
+Run the web schema generator in a separate terminal:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Then click **Send to CLI** in the YAML panel.
+The web app will `POST` the active YAML tab to `http://127.0.0.1:8787/build` and generate into `dist/<project-name>`.
+
+Bridge endpoints:
+- `GET /health` — health check
+- `POST /build` — JSON body: `{"yaml":"<schema>","output":"dist/my-app"}`
+
+Optional: set `VITE_GAPLICATOR_BRIDGE_URL` in the web app environment to point to a different bridge URL.
 
 ## Config format
 
