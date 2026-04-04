@@ -151,6 +151,12 @@ html, body {
   flex-shrink: 0;
 }
 
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .preview-title {
   font-size: 12px;
   font-weight: 600;
@@ -469,6 +475,37 @@ html, body {
   background: rgba(69, 200, 126, 0.12);
   color: var(--success);
   border-color: rgba(69, 200, 126, 0.25);
+}
+
+.btn-copy:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-send {
+  background: rgba(126, 184, 247, 0.12);
+  color: #7eb8f7;
+  border-color: rgba(126, 184, 247, 0.3);
+}
+
+.btn-send:hover {
+  background: rgba(126, 184, 247, 0.2);
+}
+
+.preview-status {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 18px;
+  font-size: 12px;
+}
+
+.preview-status.ok {
+  color: var(--success);
+  background: rgba(69, 200, 126, 0.08);
+}
+
+.preview-status.error {
+  color: var(--danger);
+  background: rgba(240, 96, 96, 0.08);
 }
 
 /* ---------- Models ---------- */

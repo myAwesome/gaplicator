@@ -130,6 +130,10 @@ func ParseConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
+	return ParseConfigBytes(data)
+}
+
+func ParseConfigBytes(data []byte) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse yaml: %w", err)
@@ -560,7 +564,6 @@ func collectJoinTables(models []Model) []joinTableDef {
 	}
 	return result
 }
-
 
 func toSingular(s string) string {
 	if strings.HasSuffix(s, "ies") {

@@ -153,6 +153,7 @@ export default function App() {
           simpleYaml={simpleYaml}
           simpleHighlighted={simpleHighlighted}
           defaultTab={schemaType}
+          projectName={activeProject.name}
         />
       </div>
     </div>

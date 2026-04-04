@@ -64,6 +64,19 @@ gaplicator build <config.yaml> [-o <output-dir>]
 |------|---------|-------------|
 | `-o`, `--output` | `dist` | Output directory for generated files |
 
+### Web Bridge (schema generator -> CLI)
+
+Run a local bridge so the web app can send generated YAML directly to the CLI:
+
+```bash
+gaplicator serve --host 127.0.0.1 --port 8787
+```
+
+Then in the web schema generator, click **Send to CLI**.
+It will `POST` the active YAML tab to `http://127.0.0.1:8787/build` and generate into `dist/<project-name>`.
+
+Optional: set `VITE_GAPLICATOR_BRIDGE_URL` in the web app environment to point to a different bridge URL.
+
 ## Config format
 
 ```yaml
